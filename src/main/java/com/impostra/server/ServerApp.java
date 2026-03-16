@@ -13,6 +13,8 @@ public class ServerApp {
         System.out.println("--- Impostra Sunucusu Başlatılıyor ---");
 
         Server server = new Server();
+        // Gece gelen aksiyonları sayacağımız değişken (Bir dizi (array) mantığına girmeden basitçe sayıyoruz)
+        int[] nightActionsReceived = {0};
         // Hangi bağlantı numarasının (ID), hangi Oyuncuya (Player) ait olduğunu tutan Kargo Takip Listesi
         java.util.Map<Integer, Player> connectionPlayerMap = new java.util.HashMap<>();
 
@@ -52,25 +54,79 @@ public class ServerApp {
                     connection.sendTCP(cevap);
 
                     // TEST İÇİN: Eğer lobideki kişi sayısı 4'e ulaşırsa oyunu otomatik başlat!
+                    // TEST İÇİN: Eğer lobideki kişi sayısı 4'e ulaşırsa oyunu otomatik başlat!
                     if (gameManager.getPlayers().size() == 4) {
                         System.out.println("\n[SİSTEM] 4 kişiye ulaşıldı! OYUN BAŞLATILIYOR...");
-                        gameManager.startGame(); // Senin yazdığın o efsane rol dağıtma motoru çalışır!
+                        gameManager.startGame();
 
-                        // Şimdi herkese GİZLİCE kendi rolünü yolluyoruz
+                        // YENİ EKLENEN KISIM: Oyundaki herkesin ismini bir listeye (diziye) topluyoruz
+                        String[] tumOyuncular = new String[4];
+                        for (int i = 0; i < gameManager.getPlayers().size(); i++) {
+                            tumOyuncular[i] = gameManager.getPlayers().get(i).getUsername();
+                        }
+
+                        // Şimdi herkese GİZLİCE kendi rolünü VE oyuncu listesini yolluyoruz
                         for (Connection c : server.getConnections()) {
-                            // Bu bağlantıya (c) ait olan oyuncuyu haritadan buluyoruz
                             Player p = connectionPlayerMap.get(c.getID());
 
                             if (p != null) {
-                                // Oyuncuya özel kargo paketini hazırlıyoruz
                                 Network.GameStartedPacket rolPaketi = new Network.GameStartedPacket();
                                 rolPaketi.assignedRole = p.getRole().getName();
                                 rolPaketi.isEvil = p.getRole().isEvil();
+                                rolPaketi.playerList = tumOyuncular; // Listeyi kargo paketine koyduk!
 
-                                // Paketi sadece ona (c) gönderiyoruz!
                                 c.sendTCP(rolPaketi);
                             }
                         }
+                    }
+                }
+
+                // Eğer oyuncudan bir "Gece Eylemi" paketi gelirse:
+                if (object instanceof Network.NightActionPacket) {
+                    Network.NightActionPacket aksiyon = (Network.NightActionPacket) object;
+                    Player gonderenOyuncu = connectionPlayerMap.get(connection.getID());
+
+                    System.out.println("\n[GECE EYLEMİ] " + gonderenOyuncu.getUsername() + " eylemini gerçekleştirdi. Hedef: " + aksiyon.targetPlayerName);
+
+                    // Hedef oyuncuyu GameManager'daki listeden ismine göre buluyoruz
+                    Player hedefOyuncu = null;
+                    for (Player p : gameManager.getPlayers()) {
+                        if (p.getUsername().equals(aksiyon.targetPlayerName)) {
+                            hedefOyuncu = p;
+                            break;
+                        }
+                    }
+
+                    // Gönderenin rolüne göre GameManager'a (Oyun Motoruna) emri iletiyoruz
+                    if (hedefOyuncu != null) {
+                        if (gonderenOyuncu.getRole().getName().equals("Vampir")) {
+                            gameManager.setVampireTarget(hedefOyuncu);
+                        } else if (gonderenOyuncu.getRole().getName().equals("Doktor")) {
+                            gameManager.setDoctorTarget(hedefOyuncu);
+                        }
+
+                        // İleride buraya Cadı veya Dedektif eklendiğinde aynı mantıkla alt alta yazılır.
+                    }
+
+                    // Gelen eylemi say
+                    nightActionsReceived[0]++;
+
+                    // Eğer 2 eylem de geldiyse (Vampir ve Doktor) geceyi bitir!
+                    if (nightActionsReceived[0] == 2) {
+                        System.out.println("\n[SİSTEM] Tüm gece eylemleri alındı! Sabah oluyor...");
+
+                        // Oyun motoruna hesaplamaları yap ve kimin öldüğünü bul emri veriyoruz
+                        gameManager.endNight();
+
+                        // Herkese sabah olduğunu haber veren kargoyu yolluyoruz
+                        Network.MorningPacket sabahPaketi = new Network.MorningPacket();
+                        sabahPaketi.morningMessage = "Güneş doğdu! Köy uyanıyor... Meydanda toplanma vakti.";
+
+                        // sendToAllTCP ile paketi bağlı olan HERKESE aynı anda fırlatıyoruz!
+                        server.sendToAllTCP(sabahPaketi);
+
+                        // Bir sonraki gece için sayacı sıfırlıyoruz
+                        nightActionsReceived[0] = 0;
                     }
                 }
             }

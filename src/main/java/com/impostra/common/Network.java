@@ -5,32 +5,42 @@ import com.esotericsoftware.kryonet.EndPoint;
 
 public class Network {
 
-    // Hem Server hem Client bu metodu çağıracak ki "Aynı Dili" konuşabilsinler
     public static void register(EndPoint endPoint) {
         Kryo kryo = endPoint.getKryo();
 
-        // Ağ üzerinden gönderilecek tüm kargo paketlerini (sınıfları) buraya kaydetmeliyiz
         kryo.register(JoinRequest.class);
         kryo.register(JoinResponse.class);
         kryo.register(GameStartedPacket.class);
+        kryo.register(String[].class);
+        // Gece aksiyonu kargosu sisteme tanıtıldı
+        kryo.register(NightActionPacket.class);
+        kryo.register(MorningPacket.class);
     }
 
-    // --- AĞ ÜZERİNDEN GÖNDERİLECEK KARGO PAKETLERİ (ŞABLONLAR) ---
+    // --- KARGO PAKETLERİ ---
 
-    // 1. Oyuncu sunucuya bağlanmak istediğinde bu paketi yollar
     public static class JoinRequest {
-        public String username; // Oyuncunun girdiği kullanıcı adı
+        public String username;
     }
 
-    // 2. Sunucu oyuncuya cevap olarak bu paketi yollar
     public static class JoinResponse {
-        public boolean isAccepted; // Lobiye kabul edildi mi?
-        public String message;     // "Hoş geldin" veya "Oyun çoktan başladı" mesajı
+        public boolean isAccepted;
+        public String message;
     }
 
-    // 3. Oyun başladığında sunucu herkese KENDİ ROLÜNÜ bu paketle yollar
     public static class GameStartedPacket {
-        public String assignedRole; // Oyuncuya düşen rolün adı (Vampir, Doktor vb.)
-        public boolean isEvil;      // Oyuncu kötü takımda mı? (İleride arayüzü kırmızı yapmak için kullanacağız)
+        public String assignedRole;
+        public boolean isEvil;
+        public String[] playerList;
+    }
+
+    // EKSİK OLAN VE HATA VERDİREN PAKET İŞTE BURADA:
+    public static class NightActionPacket {
+        public String targetPlayerName;
+    }
+
+    // 5. Gece bittiğinde sunucu herkese "Sabah Oldu" mesajını yollar
+    public static class MorningPacket {
+        public String morningMessage; // Gece ne olduğuyla ilgili genel bilgi
     }
 }

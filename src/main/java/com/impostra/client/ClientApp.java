@@ -21,23 +21,52 @@ public class ClientApp {
         client.addListener(new Listener() {
             @Override
             public void received(Connection connection, Object object) {
-                // Eğer sunucudan bir "Katılım Cevabı" (JoinResponse) gelirse:
+
+                // --- 1. LOBİYE KATILMA CEVABI ---
                 if (object instanceof Network.JoinResponse) {
                     Network.JoinResponse cevap = (Network.JoinResponse) object;
                     System.out.println("\n[SUNUCUDAN CEVAP]: " + cevap.message);
                 }
 
-                // Eğer sunucudan "Oyun Başladı ve Rolün Bu" paketi gelirse:
+                // --- 2. OYUN BAŞLADI VE ROL DAĞITILDI ---
                 if (object instanceof Network.GameStartedPacket) {
                     Network.GameStartedPacket rolPaketi = (Network.GameStartedPacket) object;
                     System.out.println("\n=====================================");
                     System.out.println("🔥 OYUN BAŞLADI! EKRAN KARARDI (GECE OLDU) 🔥");
                     System.out.println("SENİN ROLÜN: " + rolPaketi.assignedRole);
+
                     if (rolPaketi.isEvil) {
                         System.out.println("Sen bir kötüsün! Köylüleri avlama vakti...");
                     } else {
                         System.out.println("Sen bir masumsun. Geceleri hayatta kalmaya çalış!");
                     }
+
+                    System.out.println("\n--- KASABADAKİ OYUNCULAR ---");
+                    for (String isim : rolPaketi.playerList) {
+                        System.out.println("- " + isim);
+                    }
+                    System.out.println("=====================================\n");
+
+                    // TEST: Eğer oyuncu Vampir veya Doktor ise 2 saniye sonra otomatik eylem yapsın
+                    if (rolPaketi.assignedRole.equals("Vampir") || rolPaketi.assignedRole.equals("Doktor")) {
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(2000);
+                                Network.NightActionPacket eylem = new Network.NightActionPacket();
+                                eylem.targetPlayerName = rolPaketi.playerList[0]; // Şimdilik test için listedeki ilk kişiyi seçiyor
+                                client.sendTCP(eylem);
+                                System.out.println("[SİSTEM] Gece eylemi sunucuya fırlatıldı! Hedef -> " + eylem.targetPlayerName);
+                            } catch (InterruptedException e) { }
+                        }).start();
+                    }
+                }
+
+                // --- 3. SABAH OLDU MESAJI ---
+                if (object instanceof Network.MorningPacket) {
+                    Network.MorningPacket sabahPaketi = (Network.MorningPacket) object;
+                    System.out.println("\n=====================================");
+                    System.out.println("🌅 " + sabahPaketi.morningMessage);
+                    System.out.println("Gündüz tartışması başladı. Kim şüpheli?");
                     System.out.println("=====================================\n");
                 }
             }
@@ -55,10 +84,11 @@ public class ClientApp {
             client.sendTCP(istek);
 
         } catch (IOException e) {
-            System.out.println("Sunucuya bağlanılamadı!");
+            System.out.println("Sunucuya bağlanılamadı! Sunucunun açık olduğundan emin ol.");
             e.printStackTrace();
         }
 
+        // Programın kapanmaması için döngü
         while (true) {
             try { Thread.sleep(1000); } catch (InterruptedException e) { }
         }
