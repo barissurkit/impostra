@@ -1,3 +1,4 @@
+// ana sınıf (parent)
 package com.impostra.common;
 
 // abstract (soyut) sınıf yapıyoruz çünkü kimse düz "Rol" olamaz.
