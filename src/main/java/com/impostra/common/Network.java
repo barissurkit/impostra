@@ -12,6 +12,7 @@ public class Network {
         // Ağ üzerinden gönderilecek tüm kargo paketlerini (sınıfları) buraya kaydetmeliyiz
         kryo.register(JoinRequest.class);
         kryo.register(JoinResponse.class);
+        kryo.register(GameStartedPacket.class);
     }
 
     // --- AĞ ÜZERİNDEN GÖNDERİLECEK KARGO PAKETLERİ (ŞABLONLAR) ---
@@ -25,5 +26,11 @@ public class Network {
     public static class JoinResponse {
         public boolean isAccepted; // Lobiye kabul edildi mi?
         public String message;     // "Hoş geldin" veya "Oyun çoktan başladı" mesajı
+    }
+
+    // 3. Oyun başladığında sunucu herkese KENDİ ROLÜNÜ bu paketle yollar
+    public static class GameStartedPacket {
+        public String assignedRole; // Oyuncuya düşen rolün adı (Vampir, Doktor vb.)
+        public boolean isEvil;      // Oyuncu kötü takımda mı? (İleride arayüzü kırmızı yapmak için kullanacağız)
     }
 }

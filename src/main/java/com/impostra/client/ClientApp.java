@@ -26,6 +26,20 @@ public class ClientApp {
                     Network.JoinResponse cevap = (Network.JoinResponse) object;
                     System.out.println("\n[SUNUCUDAN CEVAP]: " + cevap.message);
                 }
+
+                // Eğer sunucudan "Oyun Başladı ve Rolün Bu" paketi gelirse:
+                if (object instanceof Network.GameStartedPacket) {
+                    Network.GameStartedPacket rolPaketi = (Network.GameStartedPacket) object;
+                    System.out.println("\n=====================================");
+                    System.out.println("🔥 OYUN BAŞLADI! EKRAN KARARDI (GECE OLDU) 🔥");
+                    System.out.println("SENİN ROLÜN: " + rolPaketi.assignedRole);
+                    if (rolPaketi.isEvil) {
+                        System.out.println("Sen bir kötüsün! Köylüleri avlama vakti...");
+                    } else {
+                        System.out.println("Sen bir masumsun. Geceleri hayatta kalmaya çalış!");
+                    }
+                    System.out.println("=====================================\n");
+                }
             }
         });
 
