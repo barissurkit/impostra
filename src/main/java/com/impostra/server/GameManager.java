@@ -38,31 +38,51 @@ public class GameManager {
     }
 
     // --- RASTGELE ROL DAĞITMA ALGORİTMASI ---
+    // --- RASTGELE ROL DAĞITMA ALGORİTMASI ---
     private void assignRoles() {
         List<Role> roleDeck = new ArrayList<>();
         int playerCount = players.size();
 
-        // 1. Temel Rolleri ve Açtığın Özel Rolleri Desteye Ekle
+        // 1. Kesin Olması Gereken Roller (Vampir, Doktor ve Dedektif her oyunda olur)
         roleDeck.add(new Vampire());
         roleDeck.add(new Doctor());
-        // Eğer 6+ kişi oynuyorsanız buraya Cursed, Witch vb. de eklenebilir.
-        // roleDeck.add(new Detective());
+        roleDeck.add(new Detective());
 
-        // 2. Destede kalan boşlukları Köylü ile doldur
+        // 2. Oyuncu sayısına göre ekstra (özel) rolleri desteye ekleme
+        if (playerCount >= 7) {
+            roleDeck.add(new Cursed()); // 7. kişi lanetli olur
+        }
+        if (playerCount >= 8) {
+            roleDeck.add(new Witch()); // 8 kişiyseniz cadı da gelir
+        }
+        if (playerCount >= 9) {
+            roleDeck.add(new Medium()); // 9 kişiyseniz medyum da gelir
+        }
+        if (playerCount >= 10) {
+            roleDeck.add(new Vampire()); // 10 kişi olunca 2. Vampir eklenir (Denge için)
+            roleDeck.add(new Dishonest()); // Sahtekar eklenir
+        }
+        if (playerCount >= 12) {
+            // Aşıklar 2 kişi olmalı
+            roleDeck.add(new Lover());
+            roleDeck.add(new Lover());
+        }
+
+        // 3. Destede hala boşluk varsa (örneğin 6 kişiyiz, 3 rol atandı, 3 boşluk var)
+        // Kalan boşlukları Köylü ile doldur
         while (roleDeck.size() < playerCount) {
             roleDeck.add(new Villager());
         }
 
-        // 3. Desteyi Karıştır
+        // 4. Desteyi İyice Karıştır
         Collections.shuffle(roleDeck);
 
-        // 4. Karışmış destedeki rolleri oyunculara sırayla ver
+        // 5. Karışmış destedeki rolleri oyunculara sırayla ver
         for (int i = 0; i < playerCount; i++) {
             Player p = players.get(i);
             Role assignedRole = roleDeck.get(i);
             p.assignRole(assignedRole);
 
-            // Konsola kimin hangi rolü aldığını yazdırıyoruz (Test için)
             System.out.println("[GİZLİ SİSTEM BİLGİSİ] " + p.getUsername() + " => " + assignedRole.getName());
         }
     }
