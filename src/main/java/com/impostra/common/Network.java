@@ -20,6 +20,8 @@ public class Network {
         kryo.register(VoteResultPacket.class);
 
         kryo.register(GameOverPacket.class);
+
+        kryo.register(LobbyUpdatePacket.class);
     }
 
     // --- KARGO PAKETLERİ ---
@@ -61,5 +63,9 @@ public class Network {
 
     public static class GameOverPacket {
         public String winnerMessage;
+    }
+
+    public static class LobbyUpdatePacket {
+        public String[] connectedPlayers;
     }
 }

@@ -55,6 +55,17 @@ public class ServerApp {
                     cevap.message = "Ağa bağlandın " + istek.username + "! Aktif kullanıcı: " + gameManager.getPlayers().size() + "/14";
                     connection.sendTCP(cevap);
 
+                    // Sunucudaki herkesin güncel ismini bir diziye topla
+                    String[] guncelListe = new String[gameManager.getPlayers().size()];
+                    for (int i = 0; i < gameManager.getPlayers().size(); i++) {
+                        guncelListe[i] = gameManager.getPlayers().get(i).getUsername();
+                    }
+
+                    // Bu diziyi paketle ve İSTİSNASIZ HERKESE yolla
+                    Network.LobbyUpdatePacket lobiPaketi = new Network.LobbyUpdatePacket();
+                    lobiPaketi.connectedPlayers = guncelListe;
+                    server.sendToAllTCP(lobiPaketi);
+
                     // --- MİNİMUM OYUNCU (6) İLE TEST İÇİN OTOMATİK BAŞLATMA ---
                     // Not: Arayüz (UI) yapıldığında burası bir "Host Başlat Butonu" ile değişecek.
                     if (gameManager.getPlayers().size() == 6) {
