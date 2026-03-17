@@ -12,10 +12,15 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
 
+import com.esotericsoftware.kryonet.Client;
+import com.impostra.common.Network;
+import java.io.IOException;
+
 public class ImpostraGUI extends Application {
 
     private Stage primaryStage;
     private Label statusLabel;
+    private Client client; // Ağ istemcimiz burada yaşayacak
 
     @Override
     public void start(Stage primaryStage) {
@@ -99,13 +104,30 @@ public class ImpostraGUI extends Application {
             String nick = nameField.getText().trim();
             if (nick.isEmpty()) {
                 statusLabel.setText("HATA: Kullanıcı adı boş olamaz!");
-                statusLabel.setTextFill(Color.RED);
             } else {
-                statusLabel.setText("İSTEK GÖNDERİLİYOR: " + nick);
-                statusLabel.setTextFill(Color.web("#00FF41"));
+                try {
+                    // Eğer zaten bir bağlantı varsa kapat (temiz kurulum)
+                    if (client != null) client.stop();
 
-                // Buraya ileride ClientApp bağlantı kodlarını ekleyeceğiz
-                System.out.println("Bağlantı isteği: " + nick);
+                    client = new Client();
+                    Network.register(client);
+                    client.start();
+
+                    // IP kısmına senin IP'ni yazmalısın. Şimdilik test için localhost:
+                    client.connect(5000, "127.0.0.1", 54555, 54777);
+
+                    // Sunucuya "Ben geldim" de
+                    Network.JoinRequest istek = new Network.JoinRequest();
+                    istek.username = nick;
+                    client.sendTCP(istek);
+
+                    statusLabel.setText("SİSTEME SIZILDI! Lobi bekleniyor...");
+                    statusLabel.setTextFill(Color.web("#00FF41"));
+
+                } catch (IOException ex) {
+                    statusLabel.setText("BAĞLANTI HATASI: Sunucu kapalı!");
+                    statusLabel.setTextFill(Color.RED);
+                }
             }
         });
     }
