@@ -66,24 +66,30 @@ public class ServerApp {
                     lobiPaketi.connectedPlayers = guncelListe;
                     server.sendToAllTCP(lobiPaketi);
 
-                    // --- MİNİMUM OYUNCU (6) İLE TEST İÇİN OTOMATİK BAŞLATMA ---
-                    // Not: Arayüz (UI) yapıldığında burası bir "Host Başlat Butonu" ile değişecek.
-                    if (gameManager.getPlayers().size() == 6) {
-                        gameManager.startGame();
+                    // --- 2 KİŞİ İLE TEST İÇİN MANUEL BAŞLATMA ---
+                    if (gameManager.getPlayers().size() == 2) {
 
-                        String[] tumOyuncular = new String[6]; // Dizi boyutunu da 6 yaptık
+                        // DİKKAT: gameManager.startGame() BURADAN KALDIRILDI (Çökmeyi önlemek için)
+
+                        String[] tumOyuncular = new String[2];
                         for (int i = 0; i < gameManager.getPlayers().size(); i++) {
                             tumOyuncular[i] = gameManager.getPlayers().get(i).getUsername();
                         }
+
+                        // Test için birinize Virüs, diğerinize Güvenlikçi rolünü verelim
+                        boolean virusMu = true;
 
                         for (Connection c : server.getConnections()) {
                             Player p = connectionPlayerMap.get(c.getID());
                             if (p != null) {
                                 Network.GameStartedPacket rolPaketi = new Network.GameStartedPacket();
-                                rolPaketi.assignedRole = p.getRole().getName();
-                                rolPaketi.isEvil = p.getRole().isEvil();
+                                // GameManager'dan almak yerine sahte rol basıyoruz:
+                                rolPaketi.assignedRole = virusMu ? "Rogue AI" : "Sistem Mühendisi";
+                                rolPaketi.isEvil = virusMu;
                                 rolPaketi.playerList = tumOyuncular;
                                 c.sendTCP(rolPaketi);
+
+                                virusMu = !virusMu; // Sonraki döngüde diğer oyuncuya zıt rolü ver
                             }
                         }
                     }
@@ -101,22 +107,30 @@ public class ServerApp {
                     }
 
                     if (hedefOyuncu != null) {
-                        if (gonderenOyuncu.getRole().getName().equals("Rogue AI")) {
+                        // Not: Test aşamasında GameManager sahte rollerle çalıştığı için
+                        // buradaki yetenek kullanımları konsola hata basabilir, şimdilik görmezden gelebiliriz.
+                        if (gonderenOyuncu.getRole() != null && gonderenOyuncu.getRole().getName().equals("Rogue AI")) {
                             gameManager.setAITarget(hedefOyuncu);
-                        } else if (gonderenOyuncu.getRole().getName().equals("Güvenlik Mühendisi")) {
+                        } else if (gonderenOyuncu.getRole() != null && gonderenOyuncu.getRole().getName().equals("Güvenlik Mühendisi")) {
                             gameManager.setEngineerTarget(hedefOyuncu);
                         }
 
                         nightActionsReceived[0]++;
                         if (nightActionsReceived[0] == 2) {
-                            gameManager.endNight();
+
+                            // GÜNCELLEME: Çökmeyi önlemek için gameManager.endNight() yoruma alındı.
+                            // gameManager.endNight();
+
                             Network.MorningPacket sabahPaketi = new Network.MorningPacket();
-                            sabahPaketi.morningMessage = "Ağ taraması bitti. Sistem tekrar aktif!";
+                            sabahPaketi.morningMessage = "AĞ TARAMASI BİTTİ! ŞÜPHELİYİ SİSTEMDEN ATMAK İÇİN OYLAMA BAŞLADI.";
                             server.sendToAllTCP(sabahPaketi);
                             nightActionsReceived[0] = 0;
-                            gameManager.startVoting(); // Oylamayı başlat
 
-                            // --- FİNAL KONTROLÜ (GECE BİTİMİNDE BİRİ KAZANDI MI?) ---
+                            // GÜNCELLEME: Çökmeyi önlemek için gameManager.startVoting() yoruma alındı.
+                            // gameManager.startVoting();
+
+                            // GÜNCELLEME: Çökmeyi önlemek için bitiş kontrolü yoruma alındı.
+                            /*
                             String bitisMesaji = gameManager.checkWinCondition();
                             if (bitisMesaji != null) {
                                 Network.GameOverPacket bitisPaketi = new Network.GameOverPacket();
@@ -128,6 +142,7 @@ public class ServerApp {
                                     try { Thread.sleep(2000); System.exit(0); } catch (Exception ignored) {}
                                 }).start();
                             }
+                            */
                         }
                     }
                 }
@@ -144,7 +159,10 @@ public class ServerApp {
                     }
 
                     if (hedefOyuncu != null) {
-                        gameManager.castVote(oyVerenOyuncu, hedefOyuncu);
+
+                        // GÜNCELLEME: Çökmeyi önlemek için castVote yoruma alındı.
+                        // gameManager.castVote(oyVerenOyuncu, hedefOyuncu);
+
                         votesReceived[0]++;
 
                         int hayattakiOyuncuSayisi = 0;
@@ -152,14 +170,19 @@ public class ServerApp {
                             if (p.isAlive()) hayattakiOyuncuSayisi++;
                         }
 
-                        if (votesReceived[0] == hayattakiOyuncuSayisi) {
-                            gameManager.endVoting();
+                        // TEST İÇİN GÜNCELLEME: 2 kişi de oy verince oylamayı bitir
+                        if (votesReceived[0] == 2) {
+
+                            // GÜNCELLEME: Çökmeyi önlemek için endVoting yoruma alındı.
+                            // gameManager.endVoting();
+
                             Network.VoteResultPacket sonucPaketi = new Network.VoteResultPacket();
-                            sonucPaketi.resultMessage = "Ağ oylaması bitti. Loglar incelendi ve gereği yapıldı.";
+                            sonucPaketi.resultMessage = "AĞ OYLAMASI BİTTİ. SİSTEM LOGLARI KAYDEDİLDİ.";
                             server.sendToAllTCP(sonucPaketi);
                             votesReceived[0] = 0;
 
-                            // --- FİNAL KONTROLÜ (OYLAMA BİTİMİNDE BİRİ KAZANDI MI?) ---
+                            // GÜNCELLEME: Çökmeyi önlemek için bitiş kontrolü yoruma alındı.
+                            /*
                             String bitisMesaji = gameManager.checkWinCondition();
                             if (bitisMesaji != null) {
                                 Network.GameOverPacket bitisPaketi = new Network.GameOverPacket();
@@ -171,6 +194,7 @@ public class ServerApp {
                                     try { Thread.sleep(2000); System.exit(0); } catch (Exception ignored) {}
                                 }).start();
                             }
+                            */
                         }
                     }
                 }

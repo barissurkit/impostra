@@ -28,18 +28,17 @@ public class ImpostraGUI extends Application {
 
     private Stage primaryStage;
     private Label statusLabel;
-
-    // Ağ motorumuz
     private Client client;
-
-    // --- İŞTE O KAYIP KUTU BURADA ---
-    // Dinamik lobi kutumuzu en baştan, boş bir şekilde yaratıyoruz
     private VBox lobbyPlayerBox = new VBox(10);
+
+    // Hafıza Değişkenleri
+    private String myUsername = "";
+    private String[] currentPlayers;
 
     @Override
     public void start(Stage primaryStage) {
         this.primaryStage = primaryStage;
-        Platform.setImplicitExit(true); // Mac uyumluluk ayarı
+        Platform.setImplicitExit(true);
 
         showLoginScreen();
 
@@ -49,28 +48,21 @@ public class ImpostraGUI extends Application {
     }
 
     public void showLoginScreen() {
-        // Ana katman (StackPane) - Arka plan için
         StackPane root = new StackPane();
 
-        // --- ARKA PLAN RESMİ AYARI ---
         try {
             String imagePath = getClass().getResource("/assets/background.jpg").toExternalForm();
-            root.setStyle("-fx-background-image: url('" + imagePath + "'); " +
-                    "-fx-background-size: cover; " +
-                    "-fx-background-position: center;");
+            root.setStyle("-fx-background-image: url('" + imagePath + "'); -fx-background-size: cover; -fx-background-position: center;");
         } catch (Exception e) {
             root.setStyle("-fx-background-color: #0a0a0c;");
-            System.out.println("Resim yüklenemedi, klasör yolunu kontrol et! -> resources/assets/background.jpg");
         }
 
-        // --- GİRİŞ PANELİ (Tam Ortada) ---
         VBox loginPanel = new VBox(25);
         loginPanel.setAlignment(Pos.CENTER);
         loginPanel.setMaxWidth(450);
         loginPanel.setMaxHeight(550);
-        loginPanel.setOpacity(0); // Başlangıçta şeffaf (Fade-In için)
+        loginPanel.setOpacity(0);
 
-        // --- MAVİ-TURUNCU GRADYAN VE OKUNAKLI ARKA PLAN ---
         LinearGradient gradient = new LinearGradient(
                 0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
                 new Stop(0, Color.web("#00FBFF", 0.7)),
@@ -79,15 +71,9 @@ public class ImpostraGUI extends Application {
         loginPanel.setBackground(new Background(new BackgroundFill(gradient, new CornerRadii(20), Insets.EMPTY)));
 
         loginPanel.setStyle(
-                "-fx-background-color: rgba(0, 0, 0, 0.7); " +
-                        "-fx-background-radius: 20; " +
-                        "-fx-padding: 50; " +
-                        "-fx-border-color: #FF8C00; " +
-                        "-fx-border-radius: 20; " +
-                        "-fx-border-width: 2;"
+                "-fx-background-color: rgba(0, 0, 0, 0.7); -fx-background-radius: 20; -fx-padding: 50; -fx-border-color: #FF8C00; -fx-border-radius: 20; -fx-border-width: 2;"
         );
 
-        // --- Başlık ve Parıltı Efekti ---
         Label titleLabel = new Label("IMPOSTRA");
         titleLabel.setTextFill(Color.web("#00FBFF"));
         titleLabel.setFont(Font.font("Consolas", 80));
@@ -98,33 +84,20 @@ public class ImpostraGUI extends Application {
         subTitle.setTextFill(Color.web("#00FBFF"));
         subTitle.setFont(Font.font("Consolas", 16));
 
-        // --- Giriş Kutusu ---
         TextField nameField = new TextField();
         nameField.setPromptText("ACCESS_CODE (Nick)...");
         nameField.setMinWidth(300);
         nameField.setMinHeight(45);
         nameField.setStyle(
-                "-fx-background-color: #1a1a1c; " +
-                        "-fx-text-fill: #00FBFF; " +
-                        "-fx-border-color: #FF8C00; " +
-                        "-fx-border-radius: 10; " +
-                        "-fx-background-radius: 10; " +
-                        "-fx-font-family: 'Consolas';"
+                "-fx-background-color: #1a1a1c; -fx-text-fill: #00FBFF; -fx-border-color: #FF8C00; -fx-border-radius: 10; -fx-background-radius: 10; -fx-font-family: 'Consolas';"
         );
 
-        // --- Modern Buton ---
         Button connectBtn = new Button("ENTER THE GRID");
         connectBtn.setMinWidth(300);
         connectBtn.setMinHeight(55);
         connectBtn.setCursor(javafx.scene.Cursor.HAND);
 
-        String baseButtonStyle =
-                "-fx-background-color: #00FBFF; " +
-                        "-fx-text-fill: #000000; " +
-                        "-fx-font-weight: bold; " +
-                        "-fx-font-family: 'Consolas'; " +
-                        "-fx-font-size: 18px; " +
-                        "-fx-background-radius: 15;";
+        String baseButtonStyle = "-fx-background-color: #00FBFF; -fx-text-fill: #000000; -fx-font-weight: bold; -fx-font-family: 'Consolas'; -fx-font-size: 18px; -fx-background-radius: 15;";
 
         DropShadow buttonGlow = new DropShadow(15, Color.web("#00FBFF"));
         connectBtn.setEffect(buttonGlow);
@@ -135,23 +108,18 @@ public class ImpostraGUI extends Application {
         statusLabel.setFont(Font.font("Consolas", 14));
 
         loginPanel.getChildren().addAll(titleLabel, subTitle, nameField, connectBtn, statusLabel);
-
         root.getChildren().add(loginPanel);
         StackPane.setAlignment(loginPanel, Pos.CENTER);
 
         Scene scene = new Scene(root, 1024, 768);
         primaryStage.setScene(scene);
 
-        // --- ANİMASYONLAR ---
         FadeTransition fadeIn = new FadeTransition(Duration.seconds(1.5), loginPanel);
-        fadeIn.setFromValue(0);
-        fadeIn.setToValue(1);
-        fadeIn.play();
+        fadeIn.setFromValue(0); fadeIn.setToValue(1); fadeIn.play();
 
         ScaleTransition pulse = new ScaleTransition(Duration.seconds(1.0), titleLabel);
         pulse.setFromX(1.0); pulse.setFromY(1.0); pulse.setToX(1.05); pulse.setToY(1.05);
-        pulse.setCycleCount(Animation.INDEFINITE); pulse.setAutoReverse(true);
-        pulse.play();
+        pulse.setCycleCount(Animation.INDEFINITE); pulse.setAutoReverse(true); pulse.play();
 
         ScaleTransition buttonHoverScale = new ScaleTransition(Duration.millis(150), connectBtn);
         ScaleTransition buttonClickScale = new ScaleTransition(Duration.millis(100), connectBtn);
@@ -168,17 +136,9 @@ public class ImpostraGUI extends Application {
             buttonHoverScale.setToX(1.0); buttonHoverScale.setToY(1.0); buttonHoverScale.playFromStart();
         });
 
-        connectBtn.setOnMousePressed(e -> {
-            buttonClickScale.setToX(0.95); buttonClickScale.setToY(0.95); buttonClickScale.playFromStart();
-        });
+        connectBtn.setOnMousePressed(e -> { buttonClickScale.setToX(0.95); buttonClickScale.setToY(0.95); buttonClickScale.playFromStart(); });
+        connectBtn.setOnMouseReleased(e -> { buttonClickScale.setToX(1.0); buttonClickScale.setToY(1.0); buttonClickScale.playFromStart(); });
 
-        connectBtn.setOnMouseReleased(e -> {
-            buttonClickScale.setToX(1.0); buttonClickScale.setToY(1.0); buttonClickScale.playFromStart();
-        });
-
-        // ==========================================
-        // GERÇEK SUNUCU BAĞLANTISI VE LOBİ DİNLEME
-        // ==========================================
         connectBtn.setOnAction(e -> {
             String nick = nameField.getText().trim();
             if (nick.isEmpty()) {
@@ -198,20 +158,16 @@ public class ImpostraGUI extends Application {
                     client = new Client();
                     Network.register(client);
                     client.start();
-
-                    // IP ADRESİ: Arkadaşınla oynarken burayı Hamachi IP yapacaksın!
                     client.connect(5000, "127.0.0.1", 54555, 54777);
 
                     client.addListener(new Listener() {
                         @Override
                         public void received(Connection connection, Object object) {
-
-                            // 1. SUNUCU BİZİ KABUL ETTİYSE LOBİ EKRANINI AÇ
                             if (object instanceof Network.JoinResponse) {
                                 Network.JoinResponse cevap = (Network.JoinResponse) object;
                                 Platform.runLater(() -> {
                                     if (cevap.isAccepted) {
-                                        showLobbyScreen(); // LOBİYE GEÇİŞ
+                                        showLobbyScreen();
                                     } else {
                                         statusLabel.setText("ACCESS DENIED: " + cevap.message);
                                         statusLabel.setTextFill(Color.RED);
@@ -220,29 +176,41 @@ public class ImpostraGUI extends Application {
                                 });
                             }
 
-                            // 2. SUNUCUDAN YENİ OYUNCU LİSTESİ GELDİYSE KUTUYU GÜNCELLE
                             if (object instanceof Network.LobbyUpdatePacket) {
                                 Network.LobbyUpdatePacket lobiPaketi = (Network.LobbyUpdatePacket) object;
                                 Platform.runLater(() -> {
                                     if (lobbyPlayerBox != null) {
-                                        lobbyPlayerBox.getChildren().clear(); // Eski yazıları sil
-
-                                        // Gelen güncel listedeki herkesi tek tek kutuya ekle
+                                        lobbyPlayerBox.getChildren().clear();
                                         for (String oyuncu : lobiPaketi.connectedPlayers) {
                                             Label lbl = new Label("> " + oyuncu + " (Bağlandı)");
-                                            lbl.setTextFill(Color.web("#00FF41")); // Mavi/Yeşil neon
+                                            lbl.setTextFill(Color.web("#00FF41"));
                                             lbl.setFont(Font.font("Consolas", 16));
                                             lobbyPlayerBox.getChildren().add(lbl);
                                         }
                                     }
                                 });
                             }
+
+                            if (object instanceof Network.GameStartedPacket) {
+                                Network.GameStartedPacket oyunPaketi = (Network.GameStartedPacket) object;
+                                Platform.runLater(() -> {
+                                    showGameScreen(oyunPaketi.assignedRole, oyunPaketi.isEvil, oyunPaketi.playerList);
+                                });
+                            }
+
+                            // 4. SABAH PAKETİ GELDİYSE OYLAMA EKRANINI AÇ
+                            if (object instanceof Network.MorningPacket) {
+                                Network.MorningPacket sabahPaketi = (Network.MorningPacket) object;
+                                Platform.runLater(() -> {
+                                    showVotingScreen(sabahPaketi.morningMessage);
+                                });
+                            }
                         }
                     });
 
-                    // Bağlantı başarılıysa, ismimizi sunucuya gönder
                     Network.JoinRequest istek = new Network.JoinRequest();
                     istek.username = nick;
+                    myUsername = nick;
                     client.sendTCP(istek);
 
                 } catch (Exception ex) {
@@ -256,9 +224,6 @@ public class ImpostraGUI extends Application {
         });
     }
 
-    // ==========================================
-    // BEKLEME ODASI (LOBİ) EKRAN TASARIMI
-    // ==========================================
     public void showLobbyScreen() {
         StackPane lobbyRoot = new StackPane();
         lobbyRoot.setStyle("-fx-background-color: #0a0a0c;");
@@ -275,7 +240,6 @@ public class ImpostraGUI extends Application {
         infoLabel.setTextFill(Color.LIGHTGRAY);
         infoLabel.setFont(Font.font("Consolas", 18));
 
-        // En üstte tanımladığımız Dinamik Kutunun sadece stilini ayarlıyoruz
         lobbyPlayerBox.setAlignment(Pos.CENTER);
         lobbyPlayerBox.setStyle("-fx-background-color: #1a1a1c; -fx-padding: 20; -fx-border-color: #FF8C00; -fx-border-radius: 10; -fx-background-radius: 10;");
         lobbyPlayerBox.setMaxWidth(400);
@@ -285,6 +249,139 @@ public class ImpostraGUI extends Application {
 
         Scene lobbyScene = new Scene(lobbyRoot, 1024, 768);
         primaryStage.setScene(lobbyScene);
+    }
+
+    public void showGameScreen(String role, boolean isEvil, String[] playerList) {
+        this.currentPlayers = playerList; // Oylama ekranı için listeyi hafızaya al
+
+        StackPane gameRoot = new StackPane();
+        gameRoot.setStyle("-fx-background-color: #0a0a0c;");
+
+        VBox gameBox = new VBox(20);
+        gameBox.setAlignment(Pos.CENTER);
+
+        Label title = new Label("SİSTEM AĞI AKTİF - GÖREV BAŞLADI");
+        title.setTextFill(Color.web("#FF0055"));
+        title.setFont(Font.font("Consolas", 40));
+        title.setStyle("-fx-effect: dropshadow(three-pass-box, rgba(255,0,85,0.7), 10, 0, 0, 0);");
+
+        String takim = isEvil ? "[VİRÜS / HACKER]" : "[SİSTEM / GÜVENLİK]";
+        Color rolRengi = isEvil ? Color.RED : Color.web("#00FBFF");
+
+        Label roleLabel = new Label("GİZLİ KİMLİĞİN: " + role + " " + takim);
+        roleLabel.setTextFill(rolRengi);
+        roleLabel.setFont(Font.font("Consolas", 28));
+        roleLabel.setStyle("-fx-font-weight: bold;");
+
+        VBox playersBox = new VBox(10);
+        playersBox.setAlignment(Pos.CENTER);
+        playersBox.setStyle("-fx-background-color: #1a1a1c; -fx-padding: 20; -fx-border-color: #FF0055; -fx-border-radius: 10;");
+        playersBox.setMaxWidth(450);
+
+        Label listTitle = new Label("AĞDAKİ KULLANICILAR (HEDEFLER):");
+        listTitle.setTextFill(Color.LIGHTGRAY);
+        listTitle.setFont(Font.font("Consolas", 16));
+        playersBox.getChildren().add(listTitle);
+
+        for (String p : playerList) {
+            HBox playerRow = new HBox(15);
+            playerRow.setAlignment(Pos.CENTER);
+
+            Label pLabel = new Label("> " + p);
+            pLabel.setTextFill(Color.web("#00FF41"));
+            pLabel.setFont(Font.font("Consolas", 18));
+
+            if (!p.equals(myUsername)) {
+                Button actionBtn = new Button("SİSTEMİNE SIZ / KORU");
+                actionBtn.setStyle("-fx-background-color: #FF0055; -fx-text-fill: white; -fx-font-family: 'Consolas'; -fx-cursor: hand; -fx-font-weight: bold;");
+
+                actionBtn.setOnAction(e -> {
+                    Network.NightActionPacket aksiyon = new Network.NightActionPacket();
+                    aksiyon.targetPlayerName = p;
+                    client.sendTCP(aksiyon);
+
+                    actionBtn.setText("İLETİLDİ (SİSTEM BEKLENİYOR)");
+                    actionBtn.setStyle("-fx-background-color: #555555; -fx-text-fill: #00FF41; -fx-font-family: 'Consolas';");
+                    actionBtn.setDisable(true);
+                });
+
+                playerRow.getChildren().addAll(pLabel, actionBtn);
+            } else {
+                Label meLabel = new Label(" (BU SENSİN)");
+                meLabel.setTextFill(Color.GRAY);
+                meLabel.setFont(Font.font("Consolas", 14));
+                playerRow.getChildren().addAll(pLabel, meLabel);
+            }
+            playersBox.getChildren().add(playerRow);
+        }
+
+        gameBox.getChildren().addAll(title, roleLabel, playersBox);
+        gameRoot.getChildren().add(gameBox);
+
+        Scene gameScene = new Scene(gameRoot, 1024, 768);
+        primaryStage.setScene(gameScene);
+    }
+
+    // ==========================================
+    // YEPYENİ: GÜNDÜZ EKRANI (OYLAMA FAZI)
+    // ==========================================
+    public void showVotingScreen(String message) {
+        StackPane voteRoot = new StackPane();
+        voteRoot.setStyle("-fx-background-color: #0a0a0c;");
+
+        VBox voteBox = new VBox(20);
+        voteBox.setAlignment(Pos.CENTER);
+
+        Label title = new Label("GÜNDÜZ - AĞ OYLAMASI");
+        title.setTextFill(Color.web("#FFD700")); // Altın/Sarı neon
+        title.setFont(Font.font("Consolas", 40));
+        title.setStyle("-fx-effect: dropshadow(three-pass-box, rgba(255,215,0,0.7), 10, 0, 0, 0);");
+
+        Label infoLabel = new Label("> " + message);
+        infoLabel.setTextFill(Color.LIGHTGRAY);
+        infoLabel.setFont(Font.font("Consolas", 20));
+
+        VBox playersBox = new VBox(10);
+        playersBox.setAlignment(Pos.CENTER);
+        playersBox.setStyle("-fx-background-color: #1a1a1c; -fx-padding: 20; -fx-border-color: #FFD700; -fx-border-radius: 10;");
+        playersBox.setMaxWidth(450);
+
+        for (String p : currentPlayers) {
+            HBox playerRow = new HBox(15);
+            playerRow.setAlignment(Pos.CENTER);
+
+            Label pLabel = new Label("> " + p);
+            pLabel.setTextFill(Color.web("#00FF41"));
+            pLabel.setFont(Font.font("Consolas", 18));
+
+            if (!p.equals(myUsername)) {
+                Button voteBtn = new Button("ŞÜPHELİ OLARAK OY VER");
+                voteBtn.setStyle("-fx-background-color: #FFD700; -fx-text-fill: black; -fx-font-family: 'Consolas'; -fx-cursor: hand; -fx-font-weight: bold;");
+
+                voteBtn.setOnAction(e -> {
+                    Network.VotePacket oy = new Network.VotePacket();
+                    oy.votedPlayerName = p;
+                    client.sendTCP(oy);
+
+                    voteBtn.setText("OY KULLANILDI");
+                    voteBtn.setStyle("-fx-background-color: #555555; -fx-text-fill: #FFD700; -fx-font-family: 'Consolas';");
+                    voteBtn.setDisable(true);
+                });
+                playerRow.getChildren().addAll(pLabel, voteBtn);
+            } else {
+                Label meLabel = new Label(" (BU SENSİN)");
+                meLabel.setTextFill(Color.GRAY);
+                meLabel.setFont(Font.font("Consolas", 14));
+                playerRow.getChildren().addAll(pLabel, meLabel);
+            }
+            playersBox.getChildren().add(playerRow);
+        }
+
+        voteBox.getChildren().addAll(title, infoLabel, playersBox);
+        voteRoot.getChildren().add(voteBox);
+
+        Scene voteScene = new Scene(voteRoot, 1024, 768);
+        primaryStage.setScene(voteScene);
     }
 
     public static void main(String[] args) {
