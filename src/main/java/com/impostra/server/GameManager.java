@@ -32,59 +32,53 @@ public class GameManager {
     }
 
     public void startGame() {
-        // En az 4 kişi olmadan oyun başlamasın
-        if (players.size() >= 4) {
+        // Minimum 6 kişi kontrolü
+        if (players.size() >= 6 && players.size() <= 14) {
             System.out.println("\n--- SİSTEM BAŞLATILIYOR! Yetkiler dağıtılıyor... ---");
 
-            assignRoles(); // Siber rol dağıtma fonksiyonumuzu çağırıyoruz
+            assignRoles(); // Dinamik rol dağıtma fonksiyonunu çağır
 
             currentPhase = GamePhase.NIGHT;
             System.out.println("Sistem evresi değişti: UYKU MODU (GECE)");
             System.out.println("Ağ trafiği şifrelendi... Kötücül yazılımlar harekete geçiyor.");
         } else {
-            System.out.println("Sistemi başlatmak için yeterli kullanıcı yok! Şu an: " + players.size());
+            System.out.println("[HATA] Sistemi başlatmak için oyuncu sayısı uygun değil! (Min: 6, Max: 14) Şu an: " + players.size());
         }
     }
 
-    // --- RASTGELE SİBER ROL DAĞITMA ALGORİTMASI ---
+    // --- DİNAMİK SİBER ROL DAĞITMA ALGORİTMASI ---
     private void assignRoles() {
         List<Role> roleDeck = new ArrayList<>();
         int playerCount = players.size();
 
-        // 1. Kesin Olması Gereken Roller
-        roleDeck.add(new RogueAI());
+        // 1. Dinamik Rogue AI Hesaplaması (6-8: 1 AI | 9-11: 2 AI | 12-14: 3 AI)
+        int aiCount = (playerCount >= 12) ? 3 : (playerCount >= 9) ? 2 : 1;
+        for (int i = 0; i < aiCount; i++) {
+            roleDeck.add(new RogueAI());
+        }
+
+        // 2. Kesin Olması Gereken Temel Güvenlik Rolleri
         roleDeck.add(new SecurityEngineer());
-        roleDeck.add(new CyberAnalyst()); // Eski Detective
+        roleDeck.add(new CyberAnalyst());
 
-        // 2. Oyuncu sayısına göre ekstra (özel) rolleri desteye ekleme
-        if (playerCount >= 7) {
-            roleDeck.add(new SleeperBot()); // Eski Cursed
-        }
-        if (playerCount >= 8) {
-            roleDeck.add(new RootAdmin()); // Eski Witch
-        }
-        if (playerCount >= 9) {
-            roleDeck.add(new LogReader()); // Eski Medium
-        }
-        if (playerCount >= 10) {
-            roleDeck.add(new RogueAI()); // 10 kişi olunca 2. Rogue AI eklenir (Denge için)
-            roleDeck.add(new InsiderThreat()); // Eski InsiderThreat
-        }
-        if (playerCount >= 12) {
-            // Senkronize Düğümler (Eski Aşıklar) 2 kişi olmalı
+        // 3. Oyuncu sayısına göre ekstra (özel) rolleri desteye ekleme
+        if (playerCount >= 7) roleDeck.add(new SleeperBot());
+        if (playerCount >= 8) roleDeck.add(new RootAdmin());
+        if (playerCount >= 10) roleDeck.add(new InsiderThreat());
+        if (playerCount >= 11) roleDeck.add(new LogReader());
+        if (playerCount >= 13) {
             roleDeck.add(new SyncNode());
-            roleDeck.add(new SyncNode());
+            roleDeck.add(new SyncNode()); // Senkronize düğümler 2 kişi olmalı
         }
 
-        // 3. Destede hala boşluk varsa SystemUser (Sıradan Kullanıcı) ile doldur
+        // 4. Destede hala boşluk varsa SystemUser (Sıradan Kullanıcı) ile doldur
         while (roleDeck.size() < playerCount) {
             roleDeck.add(new SystemUser());
         }
 
-        // 4. Desteyi İyice Karıştır
+        // 5. Desteyi İyice Karıştır ve Dağıt
         Collections.shuffle(roleDeck);
 
-        // 5. Karışmış destedeki rolleri oyunculara sırayla ver
         for (int i = 0; i < playerCount; i++) {
             Player p = players.get(i);
             Role assignedRole = roleDeck.get(i);

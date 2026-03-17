@@ -36,19 +36,31 @@ public class ServerApp {
 
                 if (object instanceof Network.JoinRequest) {
                     Network.JoinRequest istek = (Network.JoinRequest) object;
+
+                    // --- MAKSİMUM OYUNCU (14) KONTROLÜ ---
+                    if (gameManager.getPlayers().size() >= 14) {
+                        Network.JoinResponse retCevabi = new Network.JoinResponse();
+                        retCevabi.isAccepted = false;
+                        retCevabi.message = "Bağlantı reddedildi! Sistem dolu (Maksimum 14 kullanıcı).";
+                        connection.sendTCP(retCevabi);
+                        return; // Metodu burada kes, oyuncuyu içeri alma
+                    }
+
                     Player yeniOyuncu = new Player(istek.username);
                     gameManager.addPlayer(yeniOyuncu);
                     connectionPlayerMap.put(connection.getID(), yeniOyuncu);
 
                     Network.JoinResponse cevap = new Network.JoinResponse();
                     cevap.isAccepted = true;
-                    cevap.message = "Ağa bağlandın " + istek.username + "! Aktif kullanıcı: " + gameManager.getPlayers().size();
+                    cevap.message = "Ağa bağlandın " + istek.username + "! Aktif kullanıcı: " + gameManager.getPlayers().size() + "/14";
                     connection.sendTCP(cevap);
 
-                    if (gameManager.getPlayers().size() == 4) {
+                    // --- MİNİMUM OYUNCU (6) İLE TEST İÇİN OTOMATİK BAŞLATMA ---
+                    // Not: Arayüz (UI) yapıldığında burası bir "Host Başlat Butonu" ile değişecek.
+                    if (gameManager.getPlayers().size() == 6) {
                         gameManager.startGame();
 
-                        String[] tumOyuncular = new String[4];
+                        String[] tumOyuncular = new String[6]; // Dizi boyutunu da 6 yaptık
                         for (int i = 0; i < gameManager.getPlayers().size(); i++) {
                             tumOyuncular[i] = gameManager.getPlayers().get(i).getUsername();
                         }
