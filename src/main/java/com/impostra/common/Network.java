@@ -15,6 +15,11 @@ public class Network {
         // Gece aksiyonu kargosu sisteme tanıtıldı
         kryo.register(NightActionPacket.class);
         kryo.register(MorningPacket.class);
+
+        kryo.register(VotePacket.class);
+        kryo.register(VoteResultPacket.class);
+
+        kryo.register(GameOverPacket.class);
     }
 
     // --- KARGO PAKETLERİ ---
@@ -42,5 +47,19 @@ public class Network {
     // 5. Gece bittiğinde sunucu herkese "Sabah Oldu" mesajını yollar
     public static class MorningPacket {
         public String morningMessage; // Gece ne olduğuyla ilgili genel bilgi
+    }
+
+    // 6. Oyuncu gündüz oylamasında birine oy verdiğinde bunu yollar
+    public static class VotePacket {
+        public String votedPlayerName; // İdam edilmesini istediği kişinin adı
+    }
+
+    // 7. Oylama bittiğinde sunucu sonucu herkese bu paketle bildirir
+    public static class VoteResultPacket {
+        public String resultMessage; // "Ahmet asıldı" veya "Beraberlik çıktı" mesajı
+    }
+
+    public static class GameOverPacket {
+        public String winnerMessage;
     }
 }

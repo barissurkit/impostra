@@ -1,15 +1,15 @@
 package com.impostra.common;
 
-public class Vampire extends Role {
+public class RogueAI extends Role {
 
-    public Vampire() {
+    public RogueAI() {
         // İsmi "Vampir", isEvil durumu "true" (Kötü)
-        super("Vampir", true);
+        super("Rogue AI", true);
     }
 
     @Override
     public void performNightAction() {
         // İleride buraya ağ üzerinden (server'a) "Şu oyuncuyu öldürmek istiyorum" mesajı gönderme kodunu yazacağız.
-        System.out.println("Vampir avlanmaya çıktı! Bir kurban seçiliyor...");
+        System.out.println("Yapay Zeka seçtiği bir sisteme saldırıyor...");
     }
 }
