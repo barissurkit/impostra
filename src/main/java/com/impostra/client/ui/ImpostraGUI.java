@@ -164,8 +164,7 @@ public class ImpostraGUI extends Application {
                                         statusLabel.setText("ACCESS GRANTED! Lobiye giriliyor...");
                                         statusLabel.setTextFill(Color.web("#00FF41")); // Yeşil
 
-                                        // TODO: Lobi Ekranına Geçiş Kodu Buraya Gelecek!
-                                        System.out.println("Lobiye aktarılıyor: " + cevap.message);
+                                        showLobbyScreen();
 
                                     } else {
                                         statusLabel.setText("ACCESS DENIED: " + cevap.message);
@@ -192,6 +191,43 @@ public class ImpostraGUI extends Application {
                 }
             }).start();
         });
+    }
+
+    public void showLobbyScreen() {
+        // Lobi için yeni bir ana katman
+        StackPane lobbyRoot = new StackPane();
+        lobbyRoot.setStyle("-fx-background-color: #0a0a0c;"); // Koyu siber arka plan
+
+        VBox lobbyBox = new VBox(20);
+        lobbyBox.setAlignment(Pos.CENTER);
+
+        Label title = new Label("BEKLEME ODASI (LOBİ)");
+        title.setTextFill(Color.web("#00FBFF"));
+        title.setFont(Font.font("Consolas", 50));
+        title.setStyle("-fx-effect: dropshadow(three-pass-box, rgba(0,251,255,0.7), 10, 0, 0, 0);");
+
+        Label infoLabel = new Label("Sisteme bağlanan diğer kullanıcılar bekleniyor...");
+        infoLabel.setTextFill(Color.LIGHTGRAY);
+        infoLabel.setFont(Font.font("Consolas", 18));
+
+        // Şimdilik temsili bir "Bağlı Oyuncular" kutusu
+        VBox playerList = new VBox(10);
+        playerList.setAlignment(Pos.CENTER);
+        playerList.setStyle("-fx-background-color: #1a1a1c; -fx-padding: 20; -fx-border-color: #FF8C00; -fx-border-radius: 10; -fx-background-radius: 10;");
+        playerList.setMaxWidth(400);
+
+        Label player1 = new Label("> SEN BAĞLANDIN (Aktif)");
+        player1.setTextFill(Color.web("#00FF41"));
+        player1.setFont(Font.font("Consolas", 16));
+
+        playerList.getChildren().add(player1);
+
+        lobbyBox.getChildren().addAll(title, infoLabel, playerList);
+        lobbyRoot.getChildren().add(lobbyBox);
+
+        // Sahneyi (Scene) Lobi ile değiştir
+        Scene lobbyScene = new Scene(lobbyRoot, 1024, 768);
+        primaryStage.setScene(lobbyScene);
     }
 
     public static void main(String[] args) {
