@@ -3,6 +3,7 @@ package com.impostra.server;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
 import com.esotericsoftware.kryonet.Server;
+import com.impostra.common.JoinNotification;
 import com.impostra.common.JoinRequest;
 import com.impostra.common.Player;
 import java.io.IOException;
@@ -20,6 +21,7 @@ public class NetworkServer {
         server.start();
 
         server.getKryo().register(JoinRequest.class);
+            server.getKryo().register(JoinNotification.class);
 
         server.addListener(new Listener() {
             @Override
@@ -32,6 +34,10 @@ public class NetworkServer {
                     // gameManager'a ekleme yapacağız ama Barış'ın kodu nasıl bilmiyoruz.
                     // Şimdilik sadece mesajı ekrana basalım:
                     System.out.println(">>> SİBER LOBİYE GİRİŞ: " + yeniOyuncu.getUsername());
+                    // Telsizden tüm mahalleye anons geçiyoruz!
+                    JoinNotification anons = new JoinNotification();
+                    anons.message = yeniOyuncu.getUsername() + " siber ağa sızdı!";
+                    server.sendToAllTCP(anons);
                 }
             }
         });
