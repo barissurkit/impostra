@@ -15,12 +15,16 @@ public class Network {
         kryo.register(VotePacket.class);
         kryo.register(VoteResultPacket.class);
         kryo.register(GameOverPacket.class);
-        kryo.register(LobbyUpdatePacket.class); // Dinamik Lobi Paketi Eklendi
+        kryo.register(LobbyUpdatePacket.class);
+        kryo.register(ReadyPacket.class);        // YENİ: Oyuncu hazır bildirimi
+        kryo.register(ReadyStatusPacket.class);   // YENİ: Sunucu → herkese hazır durumu
+        kryo.register(boolean[].class);           // ReadyStatusPacket içinde kullanılıyor
     }
 
+    // === Mevcut paketler (HİÇBİRİ DEĞİŞMEDİ) ===
     public static class JoinRequest { public String username; }
     public static class JoinResponse { public boolean isAccepted; public String message; }
-    public static class LobbyUpdatePacket { public String[] connectedPlayers; } // Lobi Listesi
+    public static class LobbyUpdatePacket { public String[] connectedPlayers; }
     public static class GameStartedPacket {
         public String assignedRole;
         public boolean isEvil;
@@ -31,4 +35,18 @@ public class Network {
     public static class VotePacket { public String votedPlayerName; }
     public static class VoteResultPacket { public String resultMessage; }
     public static class GameOverPacket { public String winnerMessage; }
+
+    // === YENİ PAKETLER ===
+
+    /** Client → Server: Oyuncu hazır olduğunu bildirir */
+    public static class ReadyPacket { }
+
+    /**
+     * Server → All Clients: Lobideki herkesin hazır durumunu yayınlar.
+     * connectedPlayers[i] ile readyFlags[i] eşleşir.
+     */
+    public static class ReadyStatusPacket {
+        public String[]  connectedPlayers;
+        public boolean[] readyFlags;
+    }
 }

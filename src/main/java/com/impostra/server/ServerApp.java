@@ -7,6 +7,10 @@ import com.impostra.common.Network;
 import com.impostra.common.Player;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public class ServerApp {
     public static void main(String[] args) {
@@ -25,7 +29,13 @@ public class ServerApp {
         }
 
         GameManager gameManager = new GameManager();
-        java.util.Map<Integer, Player> connectionPlayerMap = new java.util.HashMap<>();
+        Map<Integer, Player> connectionPlayerMap = new HashMap<>();
+
+        // ============================================================
+        //  YENİ: Hazır sistemi — hangi connection ID'ler hazır?
+        // ============================================================
+        Set<Integer> readySet = new HashSet<>();
+        boolean[] gameStarted = {false};  // Oyun bir kez başladıktan sonra tekrar başlatmayı engelle
 
         int[] nightActionsReceived = {0};
         int[] votesReceived = {0};
@@ -34,16 +44,26 @@ public class ServerApp {
             @Override
             public void received(Connection connection, Object object) {
 
+                // ============================================================
+                //  KATILMA İSTEĞİ (mevcut mantık korundu)
+                // ============================================================
                 if (object instanceof Network.JoinRequest) {
                     Network.JoinRequest istek = (Network.JoinRequest) object;
 
-                    // --- MAKSİMUM OYUNCU (14) KONTROLÜ ---
+                    if (gameStarted[0]) {
+                        Network.JoinResponse ret = new Network.JoinResponse();
+                        ret.isAccepted = false;
+                        ret.message = "Oyun zaten başladı! Yeni oyuncu kabul edilmiyor.";
+                        connection.sendTCP(ret);
+                        return;
+                    }
+
                     if (gameManager.getPlayers().size() >= 14) {
-                        Network.JoinResponse retCevabi = new Network.JoinResponse();
-                        retCevabi.isAccepted = false;
-                        retCevabi.message = "Bağlantı reddedildi! Sistem dolu (Maksimum 14 kullanıcı).";
-                        connection.sendTCP(retCevabi);
-                        return; // Metodu burada kes, oyuncuyu içeri alma
+                        Network.JoinResponse ret = new Network.JoinResponse();
+                        ret.isAccepted = false;
+                        ret.message = "Bağlantı reddedildi! Sistem dolu (Maksimum 14 kullanıcı).";
+                        connection.sendTCP(ret);
+                        return;
                     }
 
                     Player yeniOyuncu = new Player(istek.username);
@@ -55,46 +75,49 @@ public class ServerApp {
                     cevap.message = "Ağa bağlandın " + istek.username + "! Aktif kullanıcı: " + gameManager.getPlayers().size() + "/14";
                     connection.sendTCP(cevap);
 
-                    // Sunucudaki herkesin güncel ismini bir diziye topla
-                    String[] guncelListe = new String[gameManager.getPlayers().size()];
-                    for (int i = 0; i < gameManager.getPlayers().size(); i++) {
-                        guncelListe[i] = gameManager.getPlayers().get(i).getUsername();
+                    System.out.println("[LOBİ] " + istek.username + " bağlandı. Toplam: " + gameManager.getPlayers().size());
+
+                    // Herkese güncel lobi listesini gönder
+                    broadcastLobbyUpdate(server, gameManager);
+
+                    // Yeni oyuncu gelince hazır durumunu da güncelle (o henüz hazır değil)
+                    broadcastReadyStatus(server, gameManager, connectionPlayerMap, readySet);
+                }
+
+                // ============================================================
+                //  YENİ: HAZIR PAKETİ
+                // ============================================================
+                if (object instanceof Network.ReadyPacket) {
+                    if (gameStarted[0]) return;  // Oyun zaten başladıysa ignore
+
+                    int connId = connection.getID();
+                    Player p = connectionPlayerMap.get(connId);
+                    if (p == null) return;
+
+                    // Toggle: tekrar basarsa hazır durumunu geri al
+                    if (readySet.contains(connId)) {
+                        readySet.remove(connId);
+                        System.out.println("[LOBİ] " + p.getUsername() + " hazır değil.");
+                    } else {
+                        readySet.add(connId);
+                        System.out.println("[LOBİ] " + p.getUsername() + " HAZIR!");
                     }
 
-                    // Bu diziyi paketle ve İSTİSNASIZ HERKESE yolla
-                    Network.LobbyUpdatePacket lobiPaketi = new Network.LobbyUpdatePacket();
-                    lobiPaketi.connectedPlayers = guncelListe;
-                    server.sendToAllTCP(lobiPaketi);
+                    // Herkese güncel hazır durumunu yayınla
+                    broadcastReadyStatus(server, gameManager, connectionPlayerMap, readySet);
 
-                    // --- 2 KİŞİ İLE TEST İÇİN MANUEL BAŞLATMA ---
-                    if (gameManager.getPlayers().size() == 2) {
-
-                        // DİKKAT: gameManager.startGame() BURADAN KALDIRILDI (Çökmeyi önlemek için)
-
-                        String[] tumOyuncular = new String[2];
-                        for (int i = 0; i < gameManager.getPlayers().size(); i++) {
-                            tumOyuncular[i] = gameManager.getPlayers().get(i).getUsername();
-                        }
-
-                        // Test için birinize Virüs, diğerinize Güvenlikçi rolünü verelim
-                        boolean virusMu = true;
-
-                        for (Connection c : server.getConnections()) {
-                            Player p = connectionPlayerMap.get(c.getID());
-                            if (p != null) {
-                                Network.GameStartedPacket rolPaketi = new Network.GameStartedPacket();
-                                // GameManager'dan almak yerine sahte rol basıyoruz:
-                                rolPaketi.assignedRole = virusMu ? "Rogue AI" : "Sistem Mühendisi";
-                                rolPaketi.isEvil = virusMu;
-                                rolPaketi.playerList = tumOyuncular;
-                                c.sendTCP(rolPaketi);
-
-                                virusMu = !virusMu; // Sonraki döngüde diğer oyuncuya zıt rolü ver
-                            }
-                        }
+                    // Herkes hazır mı kontrol et (minimum 2 kişi)
+                    int totalPlayers = gameManager.getPlayers().size();
+                    if (totalPlayers >= 2 && readySet.size() == totalPlayers) {
+                        gameStarted[0] = true;
+                        System.out.println("\n[SİSTEM] HERKES HAZIR! Oyun başlatılıyor... (" + totalPlayers + " oyuncu)");
+                        startGameForAll(server, gameManager, connectionPlayerMap);
                     }
                 }
 
+                // ============================================================
+                //  GECE AKSİYONU (mevcut mantık korundu)
+                // ============================================================
                 if (object instanceof Network.NightActionPacket) {
                     Network.NightActionPacket aksiyon = (Network.NightActionPacket) object;
                     Player gonderenOyuncu = connectionPlayerMap.get(connection.getID());
@@ -107,8 +130,6 @@ public class ServerApp {
                     }
 
                     if (hedefOyuncu != null) {
-                        // Not: Test aşamasında GameManager sahte rollerle çalıştığı için
-                        // buradaki yetenek kullanımları konsola hata basabilir, şimdilik görmezden gelebiliriz.
                         if (gonderenOyuncu.getRole() != null && gonderenOyuncu.getRole().getName().equals("Rogue AI")) {
                             gameManager.setAITarget(hedefOyuncu);
                         } else if (gonderenOyuncu.getRole() != null && gonderenOyuncu.getRole().getName().equals("Güvenlik Mühendisi")) {
@@ -116,40 +137,25 @@ public class ServerApp {
                         }
 
                         nightActionsReceived[0]++;
-                        if (nightActionsReceived[0] == 2) {
 
-                            // GÜNCELLEME: Çökmeyi önlemek için gameManager.endNight() yoruma alındı.
-                            // gameManager.endNight();
+                        // Hayattaki oyuncu sayısı kadar aksiyon gelince sabah olsun
+                        int alive = 0;
+                        for (Player p : gameManager.getPlayers()) { if (p.isAlive()) alive++; }
 
+                        if (nightActionsReceived[0] >= alive) {
                             Network.MorningPacket sabahPaketi = new Network.MorningPacket();
                             sabahPaketi.morningMessage = "AĞ TARAMASI BİTTİ! ŞÜPHELİYİ SİSTEMDEN ATMAK İÇİN OYLAMA BAŞLADI.";
                             server.sendToAllTCP(sabahPaketi);
                             nightActionsReceived[0] = 0;
-
-                            // GÜNCELLEME: Çökmeyi önlemek için gameManager.startVoting() yoruma alındı.
-                            // gameManager.startVoting();
-
-                            // GÜNCELLEME: Çökmeyi önlemek için bitiş kontrolü yoruma alındı.
-                            /*
-                            String bitisMesaji = gameManager.checkWinCondition();
-                            if (bitisMesaji != null) {
-                                Network.GameOverPacket bitisPaketi = new Network.GameOverPacket();
-                                bitisPaketi.winnerMessage = bitisMesaji;
-                                server.sendToAllTCP(bitisPaketi);
-
-                                System.out.println("\n[SİSTEM] OYUN BİTTİ. Sunucu 2 saniye içinde kapatılıyor...");
-                                new Thread(() -> {
-                                    try { Thread.sleep(2000); System.exit(0); } catch (Exception ignored) {}
-                                }).start();
-                            }
-                            */
                         }
                     }
                 }
 
+                // ============================================================
+                //  OY KULLANMA (mevcut mantık korundu)
+                // ============================================================
                 if (object instanceof Network.VotePacket) {
                     Network.VotePacket oyPaketi = (Network.VotePacket) object;
-                    Player oyVerenOyuncu = connectionPlayerMap.get(connection.getID());
 
                     Player hedefOyuncu = null;
                     for (Player p : gameManager.getPlayers()) {
@@ -159,46 +165,97 @@ public class ServerApp {
                     }
 
                     if (hedefOyuncu != null) {
-
-                        // GÜNCELLEME: Çökmeyi önlemek için castVote yoruma alındı.
-                        // gameManager.castVote(oyVerenOyuncu, hedefOyuncu);
-
                         votesReceived[0]++;
 
-                        int hayattakiOyuncuSayisi = 0;
-                        for (Player p : gameManager.getPlayers()) {
-                            if (p.isAlive()) hayattakiOyuncuSayisi++;
-                        }
+                        int alive = 0;
+                        for (Player p : gameManager.getPlayers()) { if (p.isAlive()) alive++; }
 
-                        // TEST İÇİN GÜNCELLEME: 2 kişi de oy verince oylamayı bitir
-                        if (votesReceived[0] == 2) {
-
-                            // GÜNCELLEME: Çökmeyi önlemek için endVoting yoruma alındı.
-                            // gameManager.endVoting();
-
+                        if (votesReceived[0] >= alive) {
                             Network.VoteResultPacket sonucPaketi = new Network.VoteResultPacket();
                             sonucPaketi.resultMessage = "AĞ OYLAMASI BİTTİ. SİSTEM LOGLARI KAYDEDİLDİ.";
                             server.sendToAllTCP(sonucPaketi);
                             votesReceived[0] = 0;
-
-                            // GÜNCELLEME: Çökmeyi önlemek için bitiş kontrolü yoruma alındı.
-                            /*
-                            String bitisMesaji = gameManager.checkWinCondition();
-                            if (bitisMesaji != null) {
-                                Network.GameOverPacket bitisPaketi = new Network.GameOverPacket();
-                                bitisPaketi.winnerMessage = bitisMesaji;
-                                server.sendToAllTCP(bitisPaketi);
-
-                                System.out.println("\n[SİSTEM] OYUN BİTTİ. Sunucu 2 saniye içinde kapatılıyor...");
-                                new Thread(() -> {
-                                    try { Thread.sleep(2000); System.exit(0); } catch (Exception ignored) {}
-                                }).start();
-                            }
-                            */
                         }
                     }
                 }
             }
         });
+    }
+
+    // ================================================================
+    //  YARDIMCI METOTLAR
+    // ================================================================
+
+    /** Herkese güncel oyuncu listesini gönder */
+    private static void broadcastLobbyUpdate(Server server, GameManager gm) {
+        String[] liste = new String[gm.getPlayers().size()];
+        for (int i = 0; i < gm.getPlayers().size(); i++) {
+            liste[i] = gm.getPlayers().get(i).getUsername();
+        }
+        Network.LobbyUpdatePacket paket = new Network.LobbyUpdatePacket();
+        paket.connectedPlayers = liste;
+        server.sendToAllTCP(paket);
+    }
+
+    /** Herkese güncel hazır durumunu gönder */
+    private static void broadcastReadyStatus(Server server, GameManager gm,
+                                             Map<Integer, Player> connMap, Set<Integer> readySet) {
+        int n = gm.getPlayers().size();
+        String[] names = new String[n];
+        boolean[] flags = new boolean[n];
+
+        for (int i = 0; i < n; i++) {
+            Player p = gm.getPlayers().get(i);
+            names[i] = p.getUsername();
+
+            // Bu oyuncunun connection ID'sini bul
+            for (Map.Entry<Integer, Player> entry : connMap.entrySet()) {
+                if (entry.getValue() == p) {
+                    flags[i] = readySet.contains(entry.getKey());
+                    break;
+                }
+            }
+        }
+
+        Network.ReadyStatusPacket paket = new Network.ReadyStatusPacket();
+        paket.connectedPlayers = names;
+        paket.readyFlags = flags;
+        server.sendToAllTCP(paket);
+    }
+
+    /**
+     * Herkese rol dağıtıp oyunu başlat.
+     * TEST MODU: Sahte roller — ilk oyuncuya Rogue AI, ikinciye Sistem Mühendisi,
+     * gerisine sırayla Kullanıcı / Siber Analist vs.
+     */
+    private static void startGameForAll(Server server, GameManager gm, Map<Integer, Player> connMap) {
+        int n = gm.getPlayers().size();
+        String[] tumOyuncular = new String[n];
+        for (int i = 0; i < n; i++) {
+            tumOyuncular[i] = gm.getPlayers().get(i).getUsername();
+        }
+
+        // Sahte roller: ilk oyuncu kötü, geri kalan iyi
+        // İleride gameManager.startGame() ile gerçek rol dağıtımı yapılacak
+        String[] sahteRoller = {"Rogue AI", "Sistem Mühendisi", "Siber Analist", "Kullanıcı",
+                "Güvenlik Mühendisi", "Log Okuyucu", "Root Yöneticisi",
+                "Uyuyan Bot", "Senkronize Düğüm", "Kullanıcı",
+                "Kullanıcı", "Kullanıcı", "Kullanıcı", "Kullanıcı"};
+
+        int idx = 0;
+        for (Connection c : server.getConnections()) {
+            Player p = connMap.get(c.getID());
+            if (p == null) continue;
+
+            Network.GameStartedPacket rolPaketi = new Network.GameStartedPacket();
+            rolPaketi.assignedRole = sahteRoller[idx % sahteRoller.length];
+            rolPaketi.isEvil = rolPaketi.assignedRole.equals("Rogue AI");
+            rolPaketi.playerList = tumOyuncular;
+            c.sendTCP(rolPaketi);
+
+            System.out.println("[ROL] " + p.getUsername() + " → " + rolPaketi.assignedRole +
+                    (rolPaketi.isEvil ? " [KÖTÜ]" : " [İYİ]"));
+            idx++;
+        }
     }
 }
