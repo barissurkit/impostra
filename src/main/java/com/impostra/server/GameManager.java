@@ -12,12 +12,38 @@ public class GameManager {
     private List<Player> players;
     private GamePhase currentPhase;
 
-    // Siber Eylem Hedefleri (Eski vampireTarget ve doctorTarget yerine)
-    private Player aiTarget = null;
+    private Player aiTarget       = null;
     private Player engineerTarget = null;
 
-    // Oyuncuların aldıkları şikayetleri (oyları) sayacağımız log sandığı
     private Map<Player, Integer> voteCounts = new HashMap<>();
+
+    // ============================================================
+    //  ROL AÇIKLAMALARI
+    // ============================================================
+    public static String getRoleDescription(String roleName) {
+        switch (roleName) {
+            case "Rogue AI":
+                return "Her gece bir oyuncuyu sistemden sil.\nTüm iyi oyuncular elenene kadar hayatta kal.\nDiğer kötü oyuncularla koordineli çalış.";
+            case "İç Tehdit":
+                return "Rogue AI ile aynı takımdasın.\nGündüzleri iyi biri gibi davran, şüpheyi\nbka oyuncuların üzerine çek.";
+            case "Güvenlik Mühendisi":
+                return "Her gece bir oyuncuyu koru.\nRogue AI'ın saldırısını engelleyebilirsin.\nKendini de koruyabilirsin.";
+            case "Siber Analist":
+                return "Her gece bir oyuncuyu sorgula.\nO oyuncunun iyi mi kötü mü olduğunu öğren.\nBu bilgiyi gündüzleri kullan.";
+            case "Root Yöneticisi":
+                return "Güçlü bir yetkiye sahipsin.\nGündüzleri oylamayı etkileyebilirsin.\nDoğru kişiyi oylamaya yönlendir.";
+            case "Log Okuyucu":
+                return "Gece ölen oyuncuların rolünü öğrenirsin.\nBu bilgiyle kötüleri tespit edebilirsin.\nÖlüler de sana ipucu verir.";
+            case "Uyuyan Bot":
+                return "Başlangıçta iyi bir oyuncusun.\nAma Rogue AI seni hackleyebilir!\nHacklenirsen kötü takımına geçersin.";
+            case "Senkronize Düğüm":
+                return "Başka bir Senkronize Düğüm ile eşleşirsin.\nEşin öldürülürse sen de ölürsün.\nBirlikte hayatta kalın.";
+            case "Kullanıcı":
+                return "Sıradan bir sistem kullanıcısısın.\nÖzel bir yetkin yok.\nGündüzleri dikkatli gözlemle ve\ndoğru kişiyi oyla.";
+            default:
+                return "Rolün hakkında bilgi bulunamadı.";
+        }
+    }
 
     public GameManager() {
         this.players = new ArrayList<>();
@@ -27,206 +53,137 @@ public class GameManager {
     public void addPlayer(Player player) {
         if (currentPhase == GamePhase.LOBBY) {
             players.add(player);
-            System.out.println("[LOBİ] " + player.getUsername() + " sisteme bağlandı. Aktif Bağlantı: " + players.size());
+            System.out.println("[LOBİ] " + player.getUsername() + " bağlandı. Toplam: " + players.size());
         }
+    }
+
+    /**
+     * Oyunu tamamen sıfırlar — lobi durumuna döner.
+     * Mevcut oyuncuları korur (bağlantıları kesülmeden sadece durum sıfırlanır).
+     */
+    public void reset() {
+        // Her oyuncunun durumunu sıfırla (rolü ve hayat durumu)
+        for (Player p : players) {
+            p.resetForNewGame();
+        }
+        aiTarget       = null;
+        engineerTarget = null;
+        voteCounts.clear();
+        currentPhase = GamePhase.LOBBY;
+        System.out.println("\n=== OYUN SIFIRLANDI — LOBİYE DÖNÜLİYOR ===");
     }
 
     public void startGame() {
-        // Minimum 6 kişi kontrolü
-        if (players.size() >= 6 && players.size() <= 14) {
-            System.out.println("\n--- SİSTEM BAŞLATILIYOR! Yetkiler dağıtılıyor... ---");
-
-            assignRoles(); // Dinamik rol dağıtma fonksiyonunu çağır
-
+        if (players.size() >= 2 && players.size() <= 14) {
+            System.out.println("\n=== OYUN BAŞLIYOR (" + players.size() + " oyuncu) ===");
+            assignRoles();
             currentPhase = GamePhase.NIGHT;
-            System.out.println("Sistem evresi değişti: UYKU MODU (GECE)");
-            System.out.println("Ağ trafiği şifrelendi... Kötücül yazılımlar harekete geçiyor.");
         } else {
-            System.out.println("[HATA] Sistemi başlatmak için oyuncu sayısı uygun değil! (Min: 6, Max: 14) Şu an: " + players.size());
+            System.out.println("[HATA] Oyuncu sayısı uygun değil: " + players.size());
         }
     }
 
-    // --- DİNAMİK SİBER ROL DAĞITMA ALGORİTMASI ---
     private void assignRoles() {
-        List<Role> roleDeck = new ArrayList<>();
-        int playerCount = players.size();
+        List<Role> deck = new ArrayList<>();
+        int n = players.size();
 
-        // 1. Dinamik Rogue AI Hesaplaması (6-8: 1 AI | 9-11: 2 AI | 12-14: 3 AI)
-        int aiCount = (playerCount >= 12) ? 3 : (playerCount >= 9) ? 2 : 1;
-        for (int i = 0; i < aiCount; i++) {
-            roleDeck.add(new RogueAI());
-        }
+        int rogueCount = (n >= 12) ? 3 : (n >= 9) ? 2 : 1;
+        for (int i = 0; i < rogueCount; i++) deck.add(new RogueAI());
+        if (n >= 7) deck.add(new InsiderThreat());
 
-        // 2. Kesin Olması Gereken Temel Güvenlik Rolleri
-        roleDeck.add(new SecurityEngineer());
-        roleDeck.add(new CyberAnalyst());
+        deck.add(new SecurityEngineer());
+        if (n >= 4) deck.add(new CyberAnalyst());
+        if (n >= 6) deck.add(new RootAdmin());
+        if (n >= 8) deck.add(new LogReader());
+        if (n >= 9) deck.add(new SleeperBot());
+        if (n >= 12) { deck.add(new SyncNode()); deck.add(new SyncNode()); }
 
-        // 3. Oyuncu sayısına göre ekstra (özel) rolleri desteye ekleme
-        if (playerCount >= 7) roleDeck.add(new SleeperBot());
-        if (playerCount >= 8) roleDeck.add(new RootAdmin());
-        if (playerCount >= 10) roleDeck.add(new InsiderThreat());
-        if (playerCount >= 11) roleDeck.add(new LogReader());
-        if (playerCount >= 13) {
-            roleDeck.add(new SyncNode());
-            roleDeck.add(new SyncNode()); // Senkronize düğümler 2 kişi olmalı
-        }
+        while (deck.size() < n) deck.add(new SystemUser());
 
-        // 4. Destede hala boşluk varsa SystemUser (Sıradan Kullanıcı) ile doldur
-        while (roleDeck.size() < playerCount) {
-            roleDeck.add(new SystemUser());
-        }
-
-        // 5. Desteyi İyice Karıştır ve Dağıt
-        Collections.shuffle(roleDeck);
-
-        for (int i = 0; i < playerCount; i++) {
-            Player p = players.get(i);
-            Role assignedRole = roleDeck.get(i);
-            p.assignRole(assignedRole);
-
-            System.out.println("[GİZLİ SİSTEM BİLGİSİ] IP: " + p.getUsername() + " => YETKİ: " + assignedRole.getName());
+        Collections.shuffle(deck);
+        for (int i = 0; i < n; i++) {
+            players.get(i).assignRole(deck.get(i));
+            System.out.println("[ROL] " + players.get(i).getUsername()
+                    + " → " + deck.get(i).getName()
+                    + (deck.get(i).isEvil() ? " [KÖTÜ]" : " [İYİ]"));
         }
     }
 
-    public List<Player> getPlayers() { return players; }
-    public GamePhase getCurrentPhase() { return currentPhase; }
+    public List<Player> getPlayers()         { return players; }
+    public GamePhase getCurrentPhase()        { return currentPhase; }
+    public void setCurrentPhase(GamePhase p)  { this.currentPhase = p; }
 
-    // Gece aksiyonlarını alan metotlar
     public void setAITarget(Player target) {
-        if (currentPhase == GamePhase.NIGHT) {
-            this.aiTarget = target;
-            System.out.println("[SİSTEM LOG] Rogue AI hedef IP'yi kilitledi, silme işlemi başlatılıyor...");
-        }
+        this.aiTarget = target;
+        System.out.println("[GECE] Rogue AI hedefi: " + target.getUsername());
     }
 
     public void setEngineerTarget(Player target) {
-        if (currentPhase == GamePhase.NIGHT) {
-            this.engineerTarget = target;
-            System.out.println("[SİSTEM LOG] Güvenlik Mühendisi hedef IP'ye ekstra Firewall (Güvenlik Duvarı) kurdu...");
-        }
+        this.engineerTarget = target;
+        System.out.println("[GECE] Güvenlik Mühendisi koruması: " + target.getUsername());
     }
 
-    // Gece bitip sabah olduğunda çalışacak asıl hesaplama metodu
-    public void endNight() {
-        System.out.println("\n--- GECE BİTİYOR, AĞ TRAFİĞİ İNCELENİYOR ---");
-
-        // Eğer Rogue AI birini seçtiyse hesaplama başlar
+    public String[] endNight() {
+        String message, killed = "";
         if (aiTarget != null) {
-            // Mühendisin hedefi ile AI'ın hedefi AYNI KİŞİ Mİ?
             if (aiTarget == engineerTarget) {
-                System.out.println("🛡️ GÜVENLİK RAPORU: Rogue AI '" + aiTarget.getUsername() + "' adresine saldırdı ama Firewall saldırıyı blokladı!");
+                message = "Rogue AI '" + aiTarget.getUsername() + "' adresine saldırdı ama Firewall engelledi! Kimse ölmedi.";
             } else {
-                System.out.println("💥 KRİTİK HATA: Rogue AI '" + aiTarget.getUsername() + "' kullanıcısının bağlantısını kesti (Silindi)!");
-                aiTarget.kill(); // Player sınıfındaki kill() metodunu çağırıp isAlive durumunu false yapıyoruz
+                killed  = aiTarget.getUsername();
+                message = "'" + killed + "' gece Rogue AI tarafından sistemden silindi!";
+                aiTarget.kill();
             }
         } else {
-            System.out.println("✅ GÜVENLİK RAPORU: Gece sakin geçti, anormallik yok.");
+            message = "Gece sakin geçti, kimse saldırıya uğramadı.";
         }
-
-        // Değişkenleri bir sonraki gece için sıfırlıyoruz ki eski hedefler hafızada kalmasın
-        aiTarget = null;
-        engineerTarget = null;
-
-        // Sabah evresine geçiyoruz
-        checkWinCondition(); // Her ölümden sonra oyunu biri kazandı mı diye kontrol et!
-
+        aiTarget = null; engineerTarget = null;
         currentPhase = GamePhase.DAY_DISCUSSION;
-        System.out.println("Sistem evresi değişti: GÜNDÜZ (LOG İNCELEMESİ)");
-        System.out.println("Sistem uyandı. Log kayıtları inceleniyor...");
+        return new String[]{ message, killed };
     }
 
-    // 1. Oylama aşamasını başlatır
     public void startVoting() {
-        if (currentPhase == GamePhase.DAY_DISCUSSION) {
-            currentPhase = GamePhase.DAY_VOTING;
-            voteCounts.clear(); // Önceki günün oylarını temizle
-            System.out.println("\n--- OYLAMA BAŞLADI! Hangi IP adresini karantinaya (silmeye) almak istiyorsunuz? ---");
-        }
+        currentPhase = GamePhase.DAY_VOTING;
+        voteCounts.clear();
     }
 
-    // 2. Bir kullanıcının diğerini şikayet etmesi (oy vermesi)
     public void castVote(Player voter, Player target) {
-        if (currentPhase != GamePhase.DAY_VOTING) {
-            System.out.println("[HATA] Şu an oylama (şikayet) aşamasında değiliz!");
-            return;
-        }
-        if (!voter.isAlive() || !target.isAlive()) {
-            System.out.println("[HATA] Silinmiş (ölü) kullanıcılar oy kullanamaz veya oy alamaz!");
-            return;
-        }
-
-        // Hedefin mevcut oyunu bul, üzerine 1 ekle
+        if (!voter.isAlive() || !target.isAlive()) return;
         voteCounts.put(target, voteCounts.getOrDefault(target, 0) + 1);
-        System.out.println("[SİSTEM] " + voter.getUsername() + ", şüpheli olarak " + target.getUsername() + " adresini işaretledi.");
+        System.out.println("[OY] " + voter.getUsername() + " → " + target.getUsername());
     }
 
-    // 3. Oylamayı bitir, oyları say ve silme işlemini gerçekleştir!
-    public void endVoting() {
-        if (currentPhase != GamePhase.DAY_VOTING) return;
-
-        System.out.println("\n--- OYLAMA BİTTİ! Şikayet logları sayılıyor... ---");
-
-        Player playerToExecute = null;
-        int maxVotes = 0;
-        boolean isTie = false; // Beraberlik durumu
-
-        // Sandıktaki oyları tek tek sayıyoruz
-        for (Map.Entry<Player, Integer> entry : voteCounts.entrySet()) {
-            Player candidate = entry.getKey();
-            int votes = entry.getValue();
-
-            System.out.println("- IP: " + candidate.getUsername() + " : " + votes + " şikayet aldı.");
-
-            if (votes > maxVotes) {
-                maxVotes = votes;
-                playerToExecute = candidate;
-                isTie = false; // Beraberlik bozuldu
-            } else if (votes == maxVotes && maxVotes > 0) {
-                isTie = true; // İki kişi aynı sayıda en yüksek oyu aldı
-            }
+    public String[] endVoting() {
+        Player toExecute = null; int maxVotes = 0; boolean isTie = false;
+        for (Map.Entry<Player, Integer> e : voteCounts.entrySet()) {
+            int v = e.getValue();
+            if (v > maxVotes)                    { maxVotes = v; toExecute = e.getKey(); isTie = false; }
+            else if (v == maxVotes && maxVotes > 0) isTie = true;
         }
-
-        // Sonuçları açıklama anı
-        if (maxVotes == 0) {
-            System.out.println("Ağ kararsız kaldı, hiç şikayet çıkmadı. Kimse silinmiyor.");
-        } else if (isTie) {
-            System.out.println("⚖️ SİSTEM YÖNETİCİSİ: Oylamada BERABERLİK çıktı! Sistem kuralları gereği bugün kimse karantinaya alınmıyor.");
-        } else {
-            System.out.println("🔥 SİSTEM KARARINI VERDİ! En çok şikayet alan '" + playerToExecute.getUsername() + "' sistemden tamamen silindi!");
-            playerToExecute.kill(); // Oyuncuyu siliyoruz
+        String message, executed = "";
+        if (maxVotes == 0)  { message = "Hiç oy kullanılmadı. Kimse silinmedi."; }
+        else if (isTie)     { message = "Oylamada beraberlik! Kimse silinmedi."; }
+        else {
+            executed = toExecute.getUsername();
+            message  = "'" + executed + "' en çok oyu aldı ve sistemden silindi!";
+            toExecute.kill();
         }
-
-        checkWinCondition(); // Her infazdan sonra oyunu biri kazandı mı diye kontrol et!
-
-        // İnfaz bitti, ağ şifreleniyor ve tekrar Gece oluyor...
         currentPhase = GamePhase.NIGHT;
-        System.out.println("\nSistem evresi değişti: UYKU MODU (GECE)");
-        System.out.println("Ağ trafiği şifreleniyor, bağlantılar koparılıyor...");
+        return new String[]{ message, executed };
     }
-
-    // Oyunu bitiren şartların sağlanıp sağlanmadığını kontrol etme kısmı...
 
     public String checkWinCondition() {
-        int evilCount = 0;
-        int goodCount = 0;
-
-        for(Player p: players) {
-            if ( p.isAlive() ) {
-                if ( p.getRole().isEvil()) {
-                    evilCount++;
-                } else {
-                    goodCount++;
-                }
+        int evil = 0, good = 0;
+        for (Player p : players) {
+            if (p.isAlive()) {
+                if (p.getRole() != null && p.getRole().isEvil()) evil++; else good++;
             }
         }
-
-        if ( evilCount == 0 ) {
-            return "🎉 SİSTEM GÜVENDE! Bütün Rogue AI kodları temizlendi. İNSANLIK KAZANDI! 🎉";
-        } else if (evilCount >= goodCount) {
-            return "⚠️ SİSTEM ÇÖKTÜ! Rogue AI ağın kontrolünü ele geçirdi. YAPAY ZEKA KAZANDI! ⚠️";
-        } else {
-            System.out.println("[SİSTEM DURUMU] Kalan Zararlı Yazılım: " + evilCount + " | Kalan Güvenli Kullanıcı: " + goodCount);
-            return null;
-        }
+        if (evil == 0)    return "SİSTEM GÜVENDE! Tüm Rogue AI'lar temizlendi. İYİLER KAZANDI!";
+        if (evil >= good) return "SİSTEM ÇÖKTÜ! Rogue AI kontrolü ele geçirdi. KÖTÜLER KAZANDI!";
+        System.out.println("[DURUM] Kötü: " + evil + " | İyi: " + good);
+        return null;
     }
+
+    public int      getAliveCount()       { int c=0; for (Player p:players) if(p.isAlive()) c++; return c; }
+    public String[] getAlivePlayerNames() { List<String> l=new ArrayList<>(); for(Player p:players) if(p.isAlive()) l.add(p.getUsername()); return l.toArray(new String[0]); }
 }
