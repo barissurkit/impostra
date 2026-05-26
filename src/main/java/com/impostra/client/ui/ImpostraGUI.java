@@ -95,10 +95,35 @@ public class ImpostraGUI extends Application {
     private String      myRoleDesc     = "";
     private boolean     amIEvil        = false;
     private String[]    evilTeammates  = null;
-    private int         currentRound   = 1;  // tur sayacı
+    private int         currentRound   = 1;
+    private String      syncPartnerName = "";  // Senkronize Düğüm eşi
+
+    // Gece sırası
+    private boolean     isMyNightTurn   = false;   // Şu an benim sıram mı?
+    private boolean     nightActionSent = false;   // Aksiyonumu gönderdim mi?
+    private Label       nightTimerLabel = null;    // Zamanlayıcı etiketi
+    private Timeline    nightTimerAnim  = null;    // Zamanlayıcı animasyonu
+    private String      activeNightRole = "";      // Şu an hangi rolün sırası
+    private String[]    nightTargetOptions = new String[0]; // Seçilebilecek hedefler
+    private String      blockedTargetName = "";    // Engellenen hedef (Güv. Müh. için son korunan)
 
     private final java.util.Map<String, Boolean> analystFindings = new java.util.HashMap<>();
     private Node analystOverlay = null;
+
+    // Sohbet
+    private VBox       chatMessagesBox = null;   // Mesajların listelendiği container
+    private javafx.scene.control.ScrollPane chatScroll = null;
+    private TextField  chatInputField  = null;
+    private final java.util.List<Network.ChatBroadcastPacket> chatHistory = new java.util.ArrayList<>();
+
+    // Tartışma & oylama zamanlayıcısı
+    private Label      phaseTimerLabel = null;
+    private Timeline   phaseTimerAnim  = null;
+    private String     currentPhaseLabel = "GECE";   // GECE / TARTIŞMA / OYLAMA
+
+    // Son sözler
+    private boolean    lastWordsActive    = false;
+    private int        lastWordsRemaining = 0;
 
     // ============================================================
     //  SES EFEKTLERİ
@@ -120,6 +145,19 @@ public class ImpostraGUI extends Application {
     public void start(Stage primaryStage) {
         this.primaryStage = primaryStage;
         Platform.setImplicitExit(true);
+
+        // Pencere kapatılınca temiz kapanma
+        primaryStage.setOnCloseRequest(e -> {
+            try {
+                if (nightTimerAnim != null) nightTimerAnim.stop();
+                if (phaseTimerAnim != null) phaseTimerAnim.stop();
+                if (client != null && client.isConnected()) {
+                    client.close();
+                    client.stop();
+                }
+            } catch (Exception ignored) {}
+            Platform.exit();
+        });
         Rectangle2D screen = Screen.getPrimary().getVisualBounds();
         SW = screen.getWidth(); SH = screen.getHeight();
         loadAssets();
@@ -475,35 +513,41 @@ public class ImpostraGUI extends Application {
     // ================================================================
     public void showLoginScreen(){
         StackPane root=createThemedBackground();
-        VBox panel=createGlassPanel(NEON_CYAN);panel.setMaxWidth(sx(500));panel.setSpacing(sy(20));
+        VBox panel=createGlassPanel(NEON_CYAN);panel.setMaxWidth(sx(500));panel.setSpacing(sy(18));
         Label title=createNeonTitle("IMPOSTRA",NEON_CYAN,80);
         Label sub=new Label("> DIGITAL SHIFT // ACCESS TERMINAL");sub.setTextFill(NEON_PURPLE);sub.setFont(Font.font(FONT_MONO,sf(14)));
         Rectangle sep=new Rectangle(sx(300),1);sep.setFill(NEON_CYAN);sep.setOpacity(0.4);
         TextField nameField=createNeonField("ACCESS_CODE  ::  type your nickname");
+        TextField ipField=createNeonField("HOST  ::  127.0.0.1");
+        ipField.setText("127.0.0.1");
         Button connectBtn=createNeonButton("» ENTER THE GRID «",NEON_CYAN,NEON_PINK);
         statusLabel=new Label("waiting for authorization...");statusLabel.setTextFill(Color.web("#7a8a8c"));statusLabel.setFont(Font.font(FONT_MONO,sf(12)));
-        panel.getChildren().addAll(title,sub,sep,nameField,connectBtn,statusLabel);
+        panel.getChildren().addAll(title,sub,sep,nameField,ipField,connectBtn,statusLabel);
         root.getChildren().add(panel);StackPane.setAlignment(panel,Pos.CENTER);
         ScaleTransition pulse=new ScaleTransition(Duration.seconds(1.4),title);
         pulse.setFromX(1);pulse.setFromY(1);pulse.setToX(1.04);pulse.setToY(1.04);pulse.setCycleCount(Animation.INDEFINITE);pulse.setAutoReverse(true);pulse.play();
-        connectBtn.setOnAction(e->handleConnect(nameField,connectBtn));
-        nameField.setOnAction(e->handleConnect(nameField,connectBtn));
+        connectBtn.setOnAction(e->handleConnect(nameField,ipField,connectBtn));
+        nameField.setOnAction(e->handleConnect(nameField,ipField,connectBtn));
+        ipField.setOnAction(e->handleConnect(nameField,ipField,connectBtn));
         switchScene(root);
     }
 
-    private void handleConnect(TextField nameField,Button connectBtn){
+    private void handleConnect(TextField nameField, TextField ipField, Button connectBtn){
         String nick=nameField.getText().trim();
+        String host=ipField.getText().trim();
+        if(host.isEmpty()) host="127.0.0.1";
         if(nick.isEmpty()){statusLabel.setText("× ERROR :: ACCESS_CODE BOŞ OLAMAZ");statusLabel.setTextFill(NEON_RED);return;}
-        statusLabel.setText("» connecting...");statusLabel.setTextFill(NEON_CYAN);connectBtn.setDisable(true);
+        statusLabel.setText("» connecting to "+host+" ...");statusLabel.setTextFill(NEON_CYAN);connectBtn.setDisable(true);
+        final String finalHost=host;
         new Thread(()->{
             try{
                 if(client!=null)client.stop();
                 client=new Client();Network.register(client);client.start();
-                client.connect(5000,"127.0.0.1",54555,54777);
+                client.connect(5000,finalHost,54555,54777);
                 client.addListener(buildNetworkListener(connectBtn));
                 Network.JoinRequest req=new Network.JoinRequest();req.username=nick;myUsername=nick;
                 client.sendTCP(req);
-            }catch(Exception ex){Platform.runLater(()->{statusLabel.setText("× CONNECTION FAILED");statusLabel.setTextFill(NEON_RED);connectBtn.setDisable(false);});}
+            }catch(Exception ex){Platform.runLater(()->{statusLabel.setText("× CONNECTION FAILED :: "+finalHost);statusLabel.setTextFill(NEON_RED);connectBtn.setDisable(false);});}
         }).start();
     }
 
@@ -531,7 +575,9 @@ public class ImpostraGUI extends Application {
                     Platform.runLater(()->{
                         myRole=p.assignedRole;myRoleDesc=p.roleDescription!=null?p.roleDescription:"";
                         amIEvil=p.isEvil;currentPlayers=p.playerList;evilTeammates=p.evilTeammates;
+                        syncPartnerName=p.syncPartnerName!=null?p.syncPartnerName:"";
                         deadPlayers.clear();analystFindings.clear();currentRound=1;
+                        nightActionSent=false;
                         playSound(soundNight);
                         showGameScreen(p.assignedRole,p.isEvil,p.playerList);
                     });
@@ -541,20 +587,62 @@ public class ImpostraGUI extends Application {
                     Platform.runLater(()->{
                         if(p.roundNumber>0)currentRound=p.roundNumber;
                         if(p.killedPlayer!=null&&!p.killedPlayer.isEmpty()){
-                            // Önce ölüm animasyonunu göster, sonra oylama ekranına geç
                             deadPlayers.add(p.killedPlayer);
                             System.out.println("[CLIENT] Gece öldürüldü: "+p.killedPlayer);
                             Scene scene=primaryStage.getScene();
                             if(scene!=null&&scene.getRoot() instanceof StackPane){
                                 triggerDeathAnimation((StackPane)scene.getRoot(),p.killedPlayer);
                             }
-                            // 2.5 saniye sonra oylama ekranına geç (animasyon bitsin)
                             PauseTransition delay=new PauseTransition(Duration.seconds(2.5));
                             delay.setOnFinished(e->showVotingScreen(p.morningMessage));
                             delay.play();
                         } else {
                             showVotingScreen(p.morningMessage);
                         }
+                    });
+                }
+                // YENİ: Gündüz tartışma fazı başladı
+                if(object instanceof Network.DiscussionPhasePacket){
+                    Network.DiscussionPhasePacket p=(Network.DiscussionPhasePacket)object;
+                    Platform.runLater(()->{
+                        if(p.roundNumber>0)currentRound=p.roundNumber;
+                        if(p.killedPlayer!=null&&!p.killedPlayer.isEmpty()){
+                            deadPlayers.add(p.killedPlayer);
+                            playSound(soundDeath);
+                            Scene scene=primaryStage.getScene();
+                            if(scene!=null&&scene.getRoot() instanceof StackPane){
+                                triggerDeathAnimation((StackPane)scene.getRoot(),p.killedPlayer);
+                            }
+                            PauseTransition delay=new PauseTransition(Duration.seconds(2.5));
+                            delay.setOnFinished(e->showDiscussionScreen(p.morningMessage,p.durationSeconds));
+                            delay.play();
+                        } else {
+                            showDiscussionScreen(p.morningMessage,p.durationSeconds);
+                        }
+                    });
+                }
+                // YENİ: Oylama fazı başladı (tartışma bitti)
+                if(object instanceof Network.VotingPhaseStartPacket){
+                    Network.VotingPhaseStartPacket p=(Network.VotingPhaseStartPacket)object;
+                    Platform.runLater(()->showVotingScreenWithTimer(p.durationSeconds));
+                }
+                // YENİ: Sohbet mesajı
+                if(object instanceof Network.ChatBroadcastPacket){
+                    Network.ChatBroadcastPacket p=(Network.ChatBroadcastPacket)object;
+                    Platform.runLater(()->appendChatMessage(p));
+                }
+                // YENİ: Son sözler
+                if(object instanceof Network.LastWordsPacket){
+                    Network.LastWordsPacket p=(Network.LastWordsPacket)object;
+                    Platform.runLater(()->{
+                        boolean iAmDying = p.playerName.equals(myUsername);
+                        lastWordsActive = iAmDying;
+                        lastWordsRemaining = p.durationSeconds;
+                        if(iAmDying){
+                            showLastWordsBanner(p.durationSeconds);
+                        }
+                        // Chat input'u yeniden değerlendir
+                        refreshChatInputState();
                     });
                 }
                 if(object instanceof Network.VoteResultPacket){
@@ -571,7 +659,7 @@ public class ImpostraGUI extends Application {
                 }
                 if(object instanceof Network.GameOverPacket){
                     Network.GameOverPacket p=(Network.GameOverPacket)object;
-                    Platform.runLater(()->showGameOverScreen(p.winnerMessage));
+                    Platform.runLater(()->showGameOverScreen(p.winnerMessage,p.playerNames,p.playerRoles,p.playerEvil,p.playerAlive));
                 }
                 if(object instanceof Network.AnalystResultPacket){
                     Network.AnalystResultPacket p=(Network.AnalystResultPacket)object;
@@ -586,7 +674,71 @@ public class ImpostraGUI extends Application {
                 if(object instanceof Network.ResetPacket){
                     Platform.runLater(()->{
                         deadPlayers.clear();analystFindings.clear();currentRound=1;amReady=false;
+                        syncPartnerName="";nightActionSent=false;
+                        if(nightTimerAnim!=null){nightTimerAnim.stop();nightTimerAnim=null;}
                         showLobbyScreen();
+                    });
+                }
+                // Gece sırası bildirimi
+                if(object instanceof Network.NightPhasePacket){
+                    Network.NightPhasePacket p=(Network.NightPhasePacket)object;
+                    Platform.runLater(()->{
+                        activeNightRole=p.activeRole;
+                        isMyNightTurn=p.isYourTurn;
+                        String[] opts=p.targetOptions!=null?p.targetOptions:new String[0];
+                        // Engellenen hedefi listeden çıkar (Güvenlik Mühendisi'nin son korumasını)
+                        if(p.blockedTarget!=null&&!p.blockedTarget.isEmpty()){
+                            java.util.List<String> filtered=new java.util.ArrayList<>();
+                            for(String t:opts) if(!t.equals(p.blockedTarget)) filtered.add(t);
+                            opts=filtered.toArray(new String[0]);
+                            blockedTargetName=p.blockedTarget;
+                        } else {
+                            blockedTargetName="";
+                        }
+                        nightTargetOptions=opts;
+                        if(p.isYourTurn) nightActionSent=false;
+                        updateNightPhaseUI(p.activeRole,p.timeoutSeconds,p.isYourTurn);
+                        if(currentPlayers!=null)
+                            showGameScreen(myRole,amIEvil,currentPlayers);
+                    });
+                }
+                // Rol değişti (Uyuyan Bot hacklendi)
+                if(object instanceof Network.RoleChangedPacket){
+                    Network.RoleChangedPacket p=(Network.RoleChangedPacket)object;
+                    Platform.runLater(()->{
+                        myRole=p.newRole;amIEvil=true;
+                        showRoleChangedNotification(p.message);
+                    });
+                }
+                // Gece aksiyon sonuçları (LOCKED, PROTECTED, RESTORED vb.)
+                if(object instanceof Network.NightResultPacket){
+                    Network.NightResultPacket p=(Network.NightResultPacket)object;
+                    Platform.runLater(()->{
+                        showNightResultNotification(p.resultType,p.message);
+                        // Kilit bildirimi gelince otomatik pas gönder (oyun donmasın)
+                        if("LOCKED".equals(p.resultType)&&client!=null&&client.isConnected()){
+                            Network.VotePacket pass=new Network.VotePacket();
+                            pass.votedPlayerName="";  // boş = pas
+                            client.sendTCP(pass);
+                        }
+                    });
+                }
+                // Log Okuyucu sonucu
+                if(object instanceof Network.LogReaderResultPacket){
+                    Network.LogReaderResultPacket p=(Network.LogReaderResultPacket)object;
+                    Platform.runLater(()->{
+                        Scene scene=primaryStage.getScene();
+                        if(scene!=null&&scene.getRoot() instanceof StackPane)
+                            showLogReaderResult((StackPane)scene.getRoot(),p.targetName,p.roleName,p.wasEvil);
+                    });
+                }
+                // Kötü takım listesi güncellendi (Uyuyan Bot hacklendi)
+                if(object instanceof Network.EvilTeamUpdatePacket){
+                    Network.EvilTeamUpdatePacket p=(Network.EvilTeamUpdatePacket)object;
+                    Platform.runLater(()->{
+                        evilTeammates=p.evilTeammates!=null?p.evilTeammates:new String[0];
+                        amIEvil=true;
+                        System.out.println("[CLIENT] Kötü takım güncellendi: "+java.util.Arrays.toString(evilTeammates));
                     });
                 }
             }
@@ -638,17 +790,28 @@ public class ImpostraGUI extends Application {
     // ================================================================
     public void showGameScreen(String role,boolean isEvil,String[] playerList){
         currentPlayers=playerList;
+        nightActionSent=false;
+        currentPhaseLabel="GECE";
         StackPane root=createNightBackground();
         playSound(soundNight);
 
         // Üst bilgi
         VBox topBar=new VBox(sy(8));topBar.setAlignment(Pos.CENTER);topBar.setPadding(new Insets(sy(22),0,0,0));
         Label phase=createNeonTitle("// NIGHT PHASE",NEON_PURPLE,34);
-        Label hint=new Label("> hedef seç :: hayatta olan bir ajanın avatarına tıkla");
-        hint.setTextFill(Color.web("#c8c8d0"));hint.setFont(Font.font(FONT_MONO,sf(13)));
-        DropShadow hs=new DropShadow(sf(5),Color.BLACK);hs.setSpread(0.6);hint.setEffect(hs);
-        topBar.getChildren().addAll(phase,hint);StackPane.setAlignment(topBar,Pos.TOP_CENTER);
+
+        // Gece sırası göstergesi
+        Label nightOrderHint=buildNightOrderHint(role);
+        nightOrderHint.setMouseTransparent(true);
+
+        topBar.getChildren().addAll(phase,nightOrderHint);StackPane.setAlignment(topBar,Pos.TOP_CENTER);
         topBar.setPickOnBounds(false);topBar.setMouseTransparent(true);
+
+        // Zamanlayıcı etiketi — sağ üst altı
+        nightTimerLabel=new Label("");nightTimerLabel.setTextFill(NEON_PURPLE);
+        nightTimerLabel.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(18)));
+        nightTimerLabel.setMouseTransparent(true);
+        StackPane.setAlignment(nightTimerLabel,Pos.TOP_RIGHT);
+        StackPane.setMargin(nightTimerLabel,new Insets(sy(70),sx(20),0,0));
 
         // Tur sayacı — sağ üst
         VBox roundBox=buildRoundIndicator(currentRound,"GECE");
@@ -660,7 +823,22 @@ public class ImpostraGUI extends Application {
         VBox descPanel=buildRoleDescriptionPanel(role,myRoleDesc,isEvil);
         StackPane.setAlignment(descPanel,Pos.BOTTOM_LEFT);StackPane.setMargin(descPanel,new Insets(0,0,sy(24),sx(18)));
 
-        root.getChildren().addAll(arena,topBar,roundBox,roleCard,descPanel);
+        // Sync partner bilgisi (Senkronize Düğüm için)
+        if(!syncPartnerName.isEmpty()){
+            Label syncLbl=new Label("⟷ EŞİN: "+syncPartnerName);
+            syncLbl.setTextFill(NEON_CYAN);syncLbl.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(13)));
+            syncLbl.setEffect(new DropShadow(sf(10),NEON_CYAN));syncLbl.setMouseTransparent(true);
+            StackPane.setAlignment(syncLbl,Pos.BOTTOM_RIGHT);
+            // Sync etiketi ile chat paneli çakışmasın diye yukarı al
+            StackPane.setMargin(syncLbl,new Insets(0,sx(18),sy(320),0));
+            root.getChildren().add(syncLbl);
+        }
+
+        // Chat paneli — sağ alt (kötüler ve ölüler için, iyilere readonly)
+        VBox chatPanel=buildChatPanel();
+        StackPane.setAlignment(chatPanel,Pos.BOTTOM_RIGHT);StackPane.setMargin(chatPanel,new Insets(0,sx(18),sy(24),0));
+
+        root.getChildren().addAll(arena,topBar,roundBox,nightTimerLabel,roleCard,descPanel,chatPanel);
         switchScene(root);
     }
 
@@ -671,18 +849,51 @@ public class ImpostraGUI extends Application {
         Circle inner=new Circle(cx,cy,r-sf(50));inner.setFill(Color.TRANSPARENT);inner.setStroke(Color.web("#ffffff",0.06));inner.setStrokeWidth(sf(1));inner.getStrokeDashArray().addAll(sf(4),sf(8));inner.setMouseTransparent(true);
         arena.getChildren().addAll(ring,inner);
         int n=playerList.length;double off=-Math.PI/2;double cardOffset=sf(60),cardYOffset=sf(65);
+
+        // Sunucunun gönderdiği hedef listesini set'e çevir (hızlı arama için)
+        java.util.Set<String> validTargets = new java.util.HashSet<>(java.util.Arrays.asList(nightTargetOptions));
+
         for(int i=0;i<n;i++){
             double angle=off+(2*Math.PI*i)/n;double px=cx+r*Math.cos(angle),py=cy+r*Math.sin(angle);
             String player=playerList[i];boolean isMe=player.equals(myUsername),isDead=deadPlayers.contains(player);
             Color cardColor;boolean showHalo;boolean allyFlag=false;
+            boolean isSyncPartner = !syncPartnerName.isEmpty() && player.equals(syncPartnerName);
             if(isDead){cardColor=COLOR_DEAD;showHalo=false;}
             else if(isMe){cardColor=COLOR_SELF;showHalo=true;}
+            else if(isSyncPartner){cardColor=NEON_CYAN;showHalo=true;allyFlag=true;}
             else if(amIEvil&&isEvilTeammate(player)){cardColor=COLOR_ALLY_EVIL;showHalo=true;allyFlag=true;}
             else if(analystFindings.containsKey(player)){boolean fe=analystFindings.get(player);cardColor=fe?COLOR_CONFIRMED_EVIL:COLOR_CONFIRMED_GOOD;showHalo=true;}
             else{cardColor=COLOR_NEUTRAL;showHalo=false;}
             VBox card=createAvatarCard(player,cardColor,showHalo,allyFlag,isDead);
             card.setLayoutX(px-cardOffset);card.setLayoutY(py-cardYOffset);
-            if(!isMe&&!isDead)attachTargetingBehavior(card,player,cardColor,root);
+
+            // Güvenlik Mühendisi için "geçen gece koruduğun" işareti
+            boolean isBlockedForMe = !blockedTargetName.isEmpty()
+                    && player.equals(blockedTargetName)
+                    && myRole.equals("Güvenlik Mühendisi")
+                    && isMyNightTurn;
+            if(isBlockedForMe){
+                Label lockIcon=new Label("🚫");
+                lockIcon.setTextFill(Color.web("#ff6060"));
+                lockIcon.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(22)));
+                lockIcon.setEffect(new DropShadow(sf(10),Color.web("#ff6060")));
+                lockIcon.setMouseTransparent(true);
+                StackPane iconWrap=(StackPane)card.getChildren().get(0);
+                iconWrap.getChildren().add(lockIcon);
+                card.setOpacity(0.45);
+            }
+
+            // Tıklanabilirlik: sunucunun gönderdiği validTargets listesinde varsa tıklanabilir.
+            boolean isValidTarget;
+            if(nightTargetOptions.length > 0){
+                isValidTarget = validTargets.contains(player);
+            } else {
+                boolean canTargetSelf = myRole.equals("Güvenlik Mühendisi");
+                isValidTarget = !isDead && (!isMe || canTargetSelf);
+            }
+
+            if(isValidTarget && !isBlockedForMe) attachTargetingBehavior(card,player,cardColor,root);
+
             card.setOpacity(0);card.setScaleX(0.5);card.setScaleY(0.5);
             FadeTransition fp=new FadeTransition(Duration.millis(500),card);fp.setFromValue(0);fp.setToValue(1);
             ScaleTransition spt=new ScaleTransition(Duration.millis(500),card);spt.setFromX(0.5);spt.setFromY(0.5);spt.setToX(1);spt.setToY(1);
@@ -698,9 +909,16 @@ public class ImpostraGUI extends Application {
         card.setCursor(Cursor.HAND);
         ScaleTransition hi=new ScaleTransition(Duration.millis(180),card);hi.setToX(1.15);hi.setToY(1.15);
         ScaleTransition ho=new ScaleTransition(Duration.millis(180),card);ho.setToX(1.0);ho.setToY(1.0);
-        card.setOnMouseEntered(e->hi.playFromStart());card.setOnMouseExited(e->ho.playFromStart());
+        card.setOnMouseEntered(e->{if(!card.isDisabled())hi.playFromStart();});
+        card.setOnMouseExited(e->ho.playFromStart());
         card.setOnMouseClicked(e->{
+            // Sıram değilse veya zaten aksiyon yaptıysam tıklama işlevsiz
+            if(!isMyNightTurn||nightActionSent){
+                showNightTurnNotification(activeNightRole.isEmpty()?"başka rol":activeNightRole);
+                return;
+            }
             Network.NightActionPacket a=new Network.NightActionPacket();a.targetPlayerName=target;client.sendTCP(a);
+            nightActionSent=true;
             card.setDisable(true);
             Circle sr=new Circle(sf(55),Color.TRANSPARENT);sr.setStroke(NEON_PINK);sr.setStrokeWidth(sf(3));sr.setEffect(new DropShadow(sf(35),NEON_PINK));
             ((StackPane)card.getChildren().get(0)).getChildren().add(0,sr);
@@ -723,6 +941,7 @@ public class ImpostraGUI extends Application {
     //  EKRAN 4: VOTING (DAY)
     // ================================================================
     public void showVotingScreen(String message){
+        currentPhaseLabel="OYLAMA";
         StackPane root=createDayBackground();
         VBox topBar=new VBox(sy(10));topBar.setAlignment(Pos.CENTER);topBar.setPadding(new Insets(sy(22),0,0,0));
         Label phase=createNeonTitle("// DAY :: VOTING",NEON_GOLD,34);
@@ -786,6 +1005,514 @@ public class ImpostraGUI extends Application {
         });
     }
 
+    // ================================================================
+    //  GECE SIRASI UI
+    // ================================================================
+
+    /** Gece sırası ipucu etiketi — "Sıran: X saniye" veya "Bekliyorsun..." */
+    private Label buildNightOrderHint(String myRole){
+        String txt="> sıranı bekle... sunucu gece aksiyonlarını yönetiyor";
+        Label l=new Label(txt);l.setTextFill(Color.web("#c8c8d0"));l.setFont(Font.font(FONT_MONO,sf(13)));
+        DropShadow s=new DropShadow(sf(5),Color.BLACK);s.setSpread(0.6);l.setEffect(s);return l;
+    }
+
+    /**
+     * NightPhasePacket geldiğinde çağrılır.
+     * Ekrandaki hint metnini ve zamanlayıcıyı günceller.
+     * Eğer sıra bende değilse avatar'lar disable edilir.
+     */
+    private void updateNightPhaseUI(String activeRole, int timeoutSeconds, boolean isMyTurn){
+        // Zamanlayıcıyı güncelle
+        if(nightTimerAnim!=null)nightTimerAnim.stop();
+        if(nightTimerLabel==null)return;
+
+        if(isMyTurn){
+            nightTimerLabel.setTextFill(NEON_PINK);
+            nightTimerLabel.setEffect(new DropShadow(sf(15),NEON_PINK));
+            // Geri sayım animasyonu
+            int[] remaining={timeoutSeconds};
+            nightTimerLabel.setText("⏱ "+remaining[0]+"s");
+            nightTimerAnim=new Timeline(new KeyFrame(Duration.seconds(1),e->{
+                remaining[0]--;
+                if(remaining[0]>0) nightTimerLabel.setText("⏱ "+remaining[0]+"s");
+                else nightTimerLabel.setText("⏱ 0s");
+            }));
+            nightTimerAnim.setCycleCount(timeoutSeconds);
+            nightTimerAnim.play();
+
+            // Kısa overlay — "SIRAN GELDİ"
+            showNightTurnNotification(activeRole);
+        } else {
+            nightTimerLabel.setText("[ "+activeRole+" aksiyonu... ]");
+            nightTimerLabel.setTextFill(Color.web("#605070"));
+            nightTimerLabel.setEffect(null);
+        }
+    }
+
+    /** "SIRAN GELDİ" bildirimi — ekranın üst ortasına geçici overlay */
+    private void showNightTurnNotification(String role){
+        Scene scene=primaryStage.getScene();
+        if(scene==null||!(scene.getRoot() instanceof StackPane))return;
+        StackPane root=(StackPane)scene.getRoot();
+
+        VBox notif=new VBox(sy(6));notif.setAlignment(Pos.CENTER);
+        notif.setPadding(new Insets(sy(10),sx(20),sy(10),sx(20)));
+        notif.setStyle("-fx-background-color:rgba(177,78,255,0.18);-fx-background-radius:12;-fx-border-color:#B14EFF;-fx-border-width:1.5;-fx-border-radius:12;");
+        notif.setEffect(new DropShadow(sf(20),NEON_PURPLE));
+
+        Label lbl=new Label("▶  SIRAN GELDİ — "+role.toUpperCase());
+        lbl.setTextFill(NEON_PURPLE);lbl.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(16)));
+        notif.getChildren().add(lbl);
+        notif.setMouseTransparent(true);
+        StackPane.setAlignment(notif,Pos.TOP_CENTER);
+        StackPane.setMargin(notif,new Insets(sy(110),0,0,0));
+        root.getChildren().add(notif);
+
+        FadeTransition fi=new FadeTransition(Duration.millis(300),notif);fi.setFromValue(0);fi.setToValue(1);fi.play();
+        PauseTransition pause=new PauseTransition(Duration.seconds(2.5));
+        pause.setOnFinished(e->{
+            FadeTransition fo=new FadeTransition(Duration.millis(500),notif);fo.setFromValue(1);fo.setToValue(0);
+            fo.setOnFinished(ev->root.getChildren().remove(notif));fo.play();
+        });
+        pause.play();
+    }
+
+    /** Son sözler banner'ı — ölmek üzere olan oyuncuya gösterilir */
+    private void showLastWordsBanner(int durationSeconds){
+        Scene scene=primaryStage.getScene();
+        if(scene==null||!(scene.getRoot() instanceof StackPane)) return;
+        StackPane root=(StackPane)scene.getRoot();
+
+        VBox banner=new VBox(sy(6));banner.setAlignment(Pos.CENTER);
+        banner.setPadding(new Insets(sy(12),sx(20),sy(12),sx(20)));banner.setMaxWidth(sx(420));
+        banner.setStyle("-fx-background-color:rgba(40,0,0,0.92);-fx-background-radius:14;-fx-border-color:#FF0055;-fx-border-width:2;-fx-border-radius:14;");
+        banner.setEffect(new DropShadow(sf(25),NEON_RED));
+
+        Label title=new Label("💀  SON SÖZLERİN");
+        title.setTextFill(NEON_RED);title.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(16)));
+        Label[] timeLbl={new Label("("+durationSeconds+" saniye kaldı)")};
+        timeLbl[0].setTextFill(Color.web("#ffb0b0"));timeLbl[0].setFont(Font.font(FONT_MONO,sf(12)));
+        Label hint=new Label("Herkes seni duyuyor. Konuş.");
+        hint.setTextFill(Color.web("#ffd0d0"));hint.setFont(Font.font(FONT_MONO,sf(11)));
+
+        banner.getChildren().addAll(title,timeLbl[0],hint);banner.setMouseTransparent(true);
+        StackPane.setAlignment(banner,Pos.CENTER);
+        StackPane.setMargin(banner,new Insets(0,0,sy(150),0));
+        root.getChildren().add(banner);
+
+        ScaleTransition st=new ScaleTransition(Duration.millis(400),banner);
+        st.setFromX(0.6);st.setFromY(0.6);st.setToX(1);st.setToY(1);st.play();
+
+        // Geri sayım
+        int[] remaining={durationSeconds};
+        Timeline countdown=new Timeline(new KeyFrame(Duration.seconds(1),e->{
+            remaining[0]--;
+            lastWordsRemaining=remaining[0];
+            if(remaining[0]>=0) timeLbl[0].setText("("+remaining[0]+" saniye kaldı)");
+            refreshChatInputState();
+        }));
+        countdown.setCycleCount(durationSeconds);
+        countdown.setOnFinished(e->{
+            lastWordsActive=false;
+            lastWordsRemaining=0;
+            FadeTransition fo=new FadeTransition(Duration.millis(600),banner);
+            fo.setFromValue(1);fo.setToValue(0);
+            fo.setOnFinished(ev->root.getChildren().remove(banner));
+            fo.play();
+            refreshChatInputState();
+        });
+        countdown.play();
+    }
+
+    /** Genel gece sonuç bildirimi — LOCKED, RESTORED, vb. */
+    private void showNightResultNotification(String resultType, String message){
+        Scene scene=primaryStage.getScene();
+        if(scene==null||!(scene.getRoot() instanceof StackPane))return;
+        StackPane root=(StackPane)scene.getRoot();
+
+        // Tipe göre renk seç
+        Color tc; String icon;
+        switch(resultType){
+            case "LOCKED":   tc=NEON_RED;    icon="🔒"; break;
+            case "PROTECTED":tc=NEON_GREEN;  icon="🛡"; break;
+            case "RESTORED": tc=NEON_CYAN;   icon="↻"; break;
+            default:         tc=NEON_GOLD;   icon="ℹ"; break;
+        }
+
+        VBox notif=new VBox(sy(8));notif.setAlignment(Pos.CENTER);
+        notif.setPadding(new Insets(sy(14),sx(22),sy(14),sx(22)));notif.setMaxWidth(sx(420));
+        notif.setStyle("-fx-background-color:rgba(8,8,16,0.92);-fx-background-radius:14;-fx-border-color:"+toHex(tc)+";-fx-border-width:2;-fx-border-radius:14;");
+        DropShadow g=new DropShadow(sf(22),tc);g.setSpread(0.1);notif.setEffect(g);
+
+        Label iconLbl=new Label(icon);iconLbl.setTextFill(tc);iconLbl.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(26)));
+        Label msgLbl=new Label(message);msgLbl.setTextFill(tc);msgLbl.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(13)));
+        msgLbl.setWrapText(true);msgLbl.setMaxWidth(sx(380));
+        notif.getChildren().addAll(iconLbl,msgLbl);notif.setMouseTransparent(true);
+
+        StackPane.setAlignment(notif,Pos.CENTER);root.getChildren().add(notif);
+        ScaleTransition st=new ScaleTransition(Duration.millis(300),notif);st.setFromX(0.6);st.setFromY(0.6);st.setToX(1);st.setToY(1);st.play();
+        PauseTransition pause=new PauseTransition(Duration.seconds(4));
+        pause.setOnFinished(e->{FadeTransition fo=new FadeTransition(Duration.millis(500),notif);fo.setFromValue(1);fo.setToValue(0);fo.setOnFinished(ev->root.getChildren().remove(notif));fo.play();});
+        pause.play();
+    }
+
+    /** Uyuyan Bot rol değişim bildirimi */
+    private void showRoleChangedNotification(String message){
+        Scene scene=primaryStage.getScene();
+        if(scene==null||!(scene.getRoot() instanceof StackPane))return;
+        StackPane root=(StackPane)scene.getRoot();
+
+        VBox notif=new VBox(sy(10));notif.setAlignment(Pos.CENTER);
+        notif.setPadding(new Insets(sy(20),sx(30),sy(20),sx(30)));
+        notif.setMaxWidth(sx(520));
+        notif.setStyle("-fx-background-color:rgba(255,0,85,0.15);-fx-background-radius:16;-fx-border-color:#FF0055;-fx-border-width:2;-fx-border-radius:16;");
+        notif.setEffect(new DropShadow(sf(25),NEON_RED));
+
+        Label icon=new Label("⚠");icon.setTextFill(NEON_RED);icon.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(36)));
+        Label title=new Label("SİSTEMİNE SIZMAK!");title.setTextFill(NEON_RED);title.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(20)));
+        Label msg=new Label(message);msg.setTextFill(Color.web("#ffb0b0"));msg.setFont(Font.font(FONT_MONO,sf(13)));msg.setWrapText(true);msg.setMaxWidth(sx(460));
+        notif.getChildren().addAll(icon,title,msg);
+
+        StackPane.setAlignment(notif,Pos.CENTER);root.getChildren().add(notif);
+
+        ScaleTransition st=new ScaleTransition(Duration.millis(300),notif);st.setFromX(0.5);st.setFromY(0.5);st.setToX(1);st.setToY(1);st.play();
+        PauseTransition pause=new PauseTransition(Duration.seconds(5));
+        pause.setOnFinished(e->{
+            FadeTransition fo=new FadeTransition(Duration.millis(600),notif);fo.setFromValue(1);fo.setToValue(0);
+            fo.setOnFinished(ev->root.getChildren().remove(notif));fo.play();
+        });
+        pause.play();
+    }
+
+    /** Log Okuyucu sonuç overlay */
+    private void showLogReaderResult(StackPane root, String targetName, String roleName, boolean wasEvil){
+        Color tc=wasEvil?COLOR_CONFIRMED_EVIL:COLOR_CONFIRMED_GOOD;
+        VBox panel=new VBox(sy(8));panel.setPadding(new Insets(sy(14),sx(18),sy(14),sx(18)));panel.setMaxWidth(sx(340));
+        panel.setStyle("-fx-background-color:rgba(8,8,16,0.92);-fx-background-radius:14;-fx-border-color:"+toHex(tc)+";-fx-border-width:2;-fx-border-radius:14;");
+        DropShadow g=new DropShadow(sf(25),tc);g.setSpread(0.1);panel.setEffect(g);
+
+        Label header=new Label("LOG OKUYUCU SONUCU");header.setTextFill(Color.web("#606070"));header.setFont(Font.font(FONT_MONO,sf(9)));
+        Label nameLbl=new Label("📋  "+targetName.toUpperCase());nameLbl.setTextFill(tc);nameLbl.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(17)));nameLbl.setEffect(new DropShadow(sf(10),tc));
+        Label roleLbl=new Label("ROL: "+roleName);roleLbl.setTextFill(tc);roleLbl.setFont(Font.font(FONT_MONO,sf(13)));roleLbl.setOpacity(0.85);
+        Label verdict=new Label(wasEvil?"⚠ KÖTÜ — ROGUE SİSTEM":"✓ İYİ — GÜVENLİ SİSTEM");verdict.setTextFill(tc);verdict.setFont(Font.font(FONT_MONO,sf(12)));
+        panel.getChildren().addAll(header,nameLbl,roleLbl,verdict);panel.setMouseTransparent(true);
+
+        StackPane.setAlignment(panel,Pos.TOP_RIGHT);StackPane.setMargin(panel,new Insets(sy(80),sx(20),0,0));
+        panel.setOpacity(0);root.getChildren().add(panel);
+        FadeTransition fi=new FadeTransition(Duration.millis(400),panel);fi.setFromValue(0);fi.setToValue(1);fi.play();
+        PauseTransition pause=new PauseTransition(Duration.seconds(6));
+        pause.setOnFinished(e->{FadeTransition fo=new FadeTransition(Duration.millis(600),panel);fo.setFromValue(1);fo.setToValue(0);fo.setOnFinished(ev->root.getChildren().remove(panel));fo.play();});
+        pause.play();
+    }
+
+    // ================================================================
+    //  EKRAN 4.5: GÜNDÜZ TARTIŞMA FAZI
+    //  Oylama öncesi serbest tartışma — herkes sohbet edebilir.
+    // ================================================================
+    public void showDiscussionScreen(String morningMessage, int durationSeconds){
+        currentPhaseLabel="TARTIŞMA";
+        StackPane root=createDayBackground();
+
+        // Üst başlık
+        VBox topBar=new VBox(sy(8));topBar.setAlignment(Pos.CENTER);topBar.setPadding(new Insets(sy(22),0,0,0));
+        Label phase=createNeonTitle("// DAY :: DISCUSSION",NEON_GOLD,32);
+        Label log=new Label("> "+morningMessage);log.setTextFill(Color.web("#fff8c4"));log.setFont(Font.font(FONT_MONO,sf(13)));log.setWrapText(true);log.setMaxWidth(sx(900));
+        DropShadow ls=new DropShadow(sf(5),Color.BLACK);ls.setSpread(0.5);log.setEffect(ls);
+        Label hint=new Label("> tartışın :: birbirinizle konuşun, şüphelileri tespit edin");
+        hint.setTextFill(Color.web("#1a3020"));hint.setFont(Font.font(FONT_MONO,sf(12)));
+        topBar.getChildren().addAll(phase,log,hint);
+        StackPane.setAlignment(topBar,Pos.TOP_CENTER);topBar.setPickOnBounds(false);topBar.setMouseTransparent(true);
+
+        // Tur ve zamanlayıcı
+        VBox roundBox=buildRoundIndicator(currentRound,"GÜNDÜZ");
+        StackPane.setAlignment(roundBox,Pos.TOP_RIGHT);
+
+        // Arena (avatarlar — tıklanamaz, sadece görsel)
+        Pane arena=buildDiscussionArena(currentPlayers);
+
+        // Rol kartları
+        VBox roleCard=buildMyRoleCard(myRole,amIEvil);
+        StackPane.setAlignment(roleCard,Pos.BOTTOM_CENTER);StackPane.setMargin(roleCard,new Insets(0,0,sy(24),0));roleCard.setMouseTransparent(true);
+        VBox descPanel=buildRoleDescriptionPanel(myRole,myRoleDesc,amIEvil);
+        StackPane.setAlignment(descPanel,Pos.BOTTOM_LEFT);StackPane.setMargin(descPanel,new Insets(0,0,sy(24),sx(18)));
+
+        // Chat paneli — sağ alt
+        VBox chatPanel=buildChatPanel();
+        StackPane.setAlignment(chatPanel,Pos.BOTTOM_RIGHT);StackPane.setMargin(chatPanel,new Insets(0,sx(18),sy(24),0));
+
+        // Zamanlayıcı etiketi
+        phaseTimerLabel=buildPhaseTimerLabel(durationSeconds,NEON_GOLD);
+        StackPane.setAlignment(phaseTimerLabel,Pos.TOP_RIGHT);
+        StackPane.setMargin(phaseTimerLabel,new Insets(sy(70),sx(20),0,0));
+
+        root.getChildren().addAll(arena,topBar,roundBox,phaseTimerLabel,roleCard,descPanel,chatPanel);
+        switchScene(root);
+        startPhaseTimer(durationSeconds,NEON_GOLD);
+    }
+
+    /** Oylama ekranını zamanlayıcıyla aç (yeni paket akışı için) */
+    public void showVotingScreenWithTimer(int durationSeconds){
+        currentPhaseLabel="OYLAMA";
+        showVotingScreen("> şüpheli ajanın avatarına tıkla");
+        // showVotingScreen kendi scene'ini kurar, üstüne timer ve chat ekleyelim
+        Scene scene=primaryStage.getScene();
+        if(scene!=null&&scene.getRoot() instanceof StackPane){
+            StackPane root=(StackPane)scene.getRoot();
+
+            // Chat paneli
+            VBox chatPanel=buildChatPanel();
+            StackPane.setAlignment(chatPanel,Pos.BOTTOM_RIGHT);StackPane.setMargin(chatPanel,new Insets(0,sx(18),sy(24),0));
+            root.getChildren().add(chatPanel);
+
+            // Zamanlayıcı
+            if(durationSeconds>0){
+                phaseTimerLabel=buildPhaseTimerLabel(durationSeconds,NEON_PINK);
+                StackPane.setAlignment(phaseTimerLabel,Pos.TOP_RIGHT);
+                StackPane.setMargin(phaseTimerLabel,new Insets(sy(70),sx(20),0,0));
+                root.getChildren().add(phaseTimerLabel);
+                startPhaseTimer(durationSeconds,NEON_PINK);
+            }
+
+            // SKIP VOTE butonu — sol alt
+            boolean imDead=deadPlayers.contains(myUsername);
+            if(!imDead){
+                Button skipBtn=new Button("» PAS GEÇ");
+                skipBtn.setCursor(Cursor.HAND);
+                skipBtn.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(12)));
+                String baseStyle="-fx-background-color:rgba(8,8,16,0.85);-fx-text-fill:#808090;-fx-border-color:#808090;-fx-border-width:1.5;-fx-border-radius:8;-fx-background-radius:8;-fx-padding:6 14;";
+                String hoverStyle="-fx-background-color:rgba(255,215,0,0.15);-fx-text-fill:#FFD700;-fx-border-color:#FFD700;-fx-border-width:1.5;-fx-border-radius:8;-fx-background-radius:8;-fx-padding:6 14;";
+                skipBtn.setStyle(baseStyle);
+                skipBtn.setOnMouseEntered(ev->skipBtn.setStyle(hoverStyle));
+                skipBtn.setOnMouseExited(ev->skipBtn.setStyle(baseStyle));
+                skipBtn.setOnAction(ev->{
+                    if(client!=null&&client.isConnected()){
+                        Network.VotePacket pass=new Network.VotePacket();
+                        pass.votedPlayerName="";  // boş = pas
+                        client.sendTCP(pass);
+                        skipBtn.setText("» PAS GEÇİLDİ");
+                        skipBtn.setDisable(true);
+                        // Avatarları da disable et
+                        disableAllAvatars(root);
+                    }
+                });
+                StackPane.setAlignment(skipBtn,Pos.BOTTOM_LEFT);
+                StackPane.setMargin(skipBtn,new Insets(0,0,sy(24),sx(280)));  // rol kartının yanına
+                root.getChildren().add(skipBtn);
+            }
+        }
+    }
+
+    /** Tüm avatar tıklamasını kapat (oy verildikten sonra) */
+    private void disableAllAvatars(StackPane root){
+        for(Node n:root.getChildren()){
+            if(n instanceof Pane){
+                for(Node c:((Pane)n).getChildren()){
+                    if(c instanceof VBox){
+                        c.setDisable(true);
+                        FadeTransition dm=new FadeTransition(Duration.millis(300),c);
+                        dm.setToValue(0.4);dm.play();
+                    }
+                }
+            }
+        }
+    }
+
+    /** Tartışma ekranındaki arena — avatarlar tıklanamaz, sadece görsel */
+    private Pane buildDiscussionArena(String[] playerList){
+        Pane arena=new Pane();arena.setPrefSize(SW,SH);arena.setPickOnBounds(false);
+        double cx=SW/2.0,cy=SH*0.46,r=Math.min(SW,SH)*0.22;
+        Circle ring=new Circle(cx,cy,r+sf(30));ring.setFill(Color.TRANSPARENT);ring.setStroke(NEON_GOLD);ring.setStrokeWidth(sf(1.5));ring.setOpacity(0.4);ring.setMouseTransparent(true);arena.getChildren().add(ring);
+        int n=playerList.length;double off=-Math.PI/2;double cardOffset=sf(60),cardYOffset=sf(65);
+        for(int i=0;i<n;i++){
+            double angle=off+(2*Math.PI*i)/n;double px=cx+r*Math.cos(angle),py=cy+r*Math.sin(angle);
+            String player=playerList[i];boolean isMe=player.equals(myUsername),isDead=deadPlayers.contains(player);
+            Color cc;
+            if(isDead)cc=COLOR_DEAD;
+            else if(isMe)cc=COLOR_SELF;
+            else if(analystFindings.containsKey(player))cc=analystFindings.get(player)?COLOR_CONFIRMED_EVIL:COLOR_CONFIRMED_GOOD;
+            else cc=NEON_GOLD;
+            VBox card=createAvatarCard(player,cc,isMe,false,isDead);
+            card.setLayoutX(px-cardOffset);card.setLayoutY(py-cardYOffset);
+            card.setMouseTransparent(true);  // tartışmada tıklanamaz
+            arena.getChildren().add(card);
+        }
+        return arena;
+    }
+
+    // ================================================================
+    //  CHAT PANELİ
+    // ================================================================
+
+    /** Sağ alt köşedeki kayan sohbet paneli. Tartışma + oylama + gece (kötüler) için kullanılır. */
+    private VBox buildChatPanel(){
+        // Kanal bilgisi: hangi kanaldayım?
+        String channelLabel;
+        Color channelColor;
+        boolean canChat = canPlayerChatNow();
+        if(deadPlayers.contains(myUsername)){
+            channelLabel="[ ÖLÜ KANALI ]";channelColor=Color.web("#909090");
+        } else if(currentPhaseLabel.equals("GECE")){
+            channelLabel=amIEvil?"[ KÖTÜ TAKIM ]":"[ GECE — SESSİZLİK ]";
+            channelColor=amIEvil?NEON_RED:COLOR_DEAD;
+        } else {
+            channelLabel="[ GÜNDÜZ — HERKES ]";channelColor=NEON_GOLD;
+        }
+
+        VBox panel=new VBox(sy(6));panel.setPadding(new Insets(sy(10),sx(12),sy(10),sx(12)));
+        panel.setMinWidth(sx(340));panel.setMaxWidth(sx(380));panel.setMaxHeight(sy(280));
+        panel.setStyle("-fx-background-color:rgba(8,8,16,0.88);-fx-background-radius:12;-fx-border-color:"+toHex(channelColor)+";-fx-border-width:1.2;-fx-border-radius:12;");
+        DropShadow g=new DropShadow(sf(15),channelColor);g.setSpread(0.05);panel.setEffect(g);
+
+        // Başlık
+        Label header=new Label("◆ SOHBET  "+channelLabel);
+        header.setTextFill(channelColor);header.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(11)));
+
+        // Mesaj listesi
+        chatMessagesBox=new VBox(sy(3));
+        chatMessagesBox.setPadding(new Insets(sy(4)));
+        chatScroll=new javafx.scene.control.ScrollPane(chatMessagesBox);
+        chatScroll.setFitToWidth(true);chatScroll.setPrefHeight(sy(180));
+        chatScroll.setStyle("-fx-background:transparent;-fx-background-color:transparent;-fx-border-color:transparent;");
+        chatScroll.setHbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.NEVER);
+
+        // Mevcut geçmişi göster
+        for(Network.ChatBroadcastPacket msg : chatHistory){
+            chatMessagesBox.getChildren().add(buildChatRow(msg));
+        }
+
+        // Input
+        chatInputField=new TextField();
+        chatInputField.setPromptText(canChat?"mesaj yaz...":"konuşamazsın");
+        chatInputField.setFont(Font.font(FONT_MONO,sf(11)));
+        chatInputField.setStyle("-fx-background-color:rgba(0,0,0,0.5);-fx-text-fill:#e0e8e8;-fx-prompt-text-fill:#505060;-fx-border-color:"+toHex(channelColor)+";-fx-border-width:1;-fx-border-radius:6;-fx-background-radius:6;-fx-padding:0 8;");
+        chatInputField.setDisable(!canChat);
+        chatInputField.setOnAction(e->sendChatMessage());
+
+        panel.getChildren().addAll(header,chatScroll,chatInputField);
+
+        // En altta scroll'u tut
+        chatScroll.setVvalue(1.0);
+        return panel;
+    }
+
+    /** Bu oyuncu şu an konuşabilir mi? */
+    private boolean canPlayerChatNow(){
+        boolean imDead = deadPlayers.contains(myUsername);
+        if(lastWordsActive) return true;  // Son sözler süresi — DAY kanalına yazabilir
+        if(imDead) return true; // ölü kanalı
+        if(currentPhaseLabel.equals("GECE")) return amIEvil; // gece sadece kötüler
+        return true; // gündüz herkes
+    }
+
+    /** Chat input'unun aktif/pasif durumunu yeniden hesapla (last words için) */
+    private void refreshChatInputState(){
+        if(chatInputField==null) return;
+        boolean canChat = canPlayerChatNow();
+        chatInputField.setDisable(!canChat);
+        if(lastWordsActive){
+            chatInputField.setPromptText("SON SÖZLERİN... ("+lastWordsRemaining+"sn)");
+        } else if(canChat){
+            chatInputField.setPromptText("mesaj yaz...");
+        } else {
+            chatInputField.setPromptText("konuşamazsın");
+        }
+    }
+
+    /** Yeni mesaj geldiğinde çağrılır */
+    private void appendChatMessage(Network.ChatBroadcastPacket msg){
+        chatHistory.add(msg);
+        // En fazla 100 mesaj tut (memory leak engeli)
+        if(chatHistory.size()>100) chatHistory.remove(0);
+
+        if(chatMessagesBox==null) return;
+        chatMessagesBox.getChildren().add(buildChatRow(msg));
+        if(chatMessagesBox.getChildren().size()>100)
+            chatMessagesBox.getChildren().remove(0);
+
+        // Otomatik scroll en alta
+        if(chatScroll!=null){
+            // Bir frame sonra scroll yap ki layout güncellensin
+            Platform.runLater(()->chatScroll.setVvalue(1.0));
+        }
+    }
+
+    /** Tek mesaj satırı */
+    private javafx.scene.layout.HBox buildChatRow(Network.ChatBroadcastPacket msg){
+        javafx.scene.layout.HBox row=new javafx.scene.layout.HBox(sx(6));
+        row.setAlignment(Pos.TOP_LEFT);
+
+        Color senderColor;
+        switch(msg.channel){
+            case "SYSTEM": senderColor=NEON_GOLD; break;
+            case "EVIL":   senderColor=NEON_RED;  break;
+            case "DEAD":   senderColor=Color.web("#909090"); break;
+            default:       senderColor=msg.fromDead?Color.web("#909090"):NEON_CYAN; break;
+        }
+        // Kendi mesajım vurgu
+        if(msg.sender.equals(myUsername)){
+            senderColor=NEON_GREEN;
+        }
+
+        Label senderLbl=new Label(msg.sender+":");senderLbl.setTextFill(senderColor);
+        senderLbl.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(11)));
+        senderLbl.setMinWidth(sx(80));senderLbl.setMaxWidth(sx(100));
+
+        Label msgLbl=new Label(msg.message);msgLbl.setTextFill(Color.web("#d8e0e8"));
+        msgLbl.setFont(Font.font(FONT_MONO,sf(11)));msgLbl.setWrapText(true);
+        msgLbl.setMaxWidth(sx(230));
+
+        row.getChildren().addAll(senderLbl,msgLbl);
+        return row;
+    }
+
+    /** Mesaj gönder */
+    private void sendChatMessage(){
+        if(chatInputField==null||client==null||!client.isConnected()) return;
+        String text=chatInputField.getText().trim();
+        if(text.isEmpty()) return;
+
+        Network.ChatMessagePacket pkt=new Network.ChatMessagePacket();
+        pkt.message=text;
+        // Kanal: son sözler aktifse DAY (sunucu zaten kontrol ediyor), diğerleri normal
+        if(lastWordsActive)                       pkt.channel="DAY";
+        else if(deadPlayers.contains(myUsername)) pkt.channel="DEAD";
+        else if(currentPhaseLabel.equals("GECE")) pkt.channel="EVIL";
+        else                                       pkt.channel="DAY";
+
+        client.sendTCP(pkt);
+        chatInputField.clear();
+    }
+
+    // ================================================================
+    //  FAZ ZAMANLAYICISI
+    // ================================================================
+
+    private Label buildPhaseTimerLabel(int seconds, Color color){
+        Label lbl=new Label("⏱ "+seconds+"s");
+        lbl.setTextFill(color);lbl.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(18)));
+        DropShadow g=new DropShadow(sf(12),color);g.setSpread(0.2);lbl.setEffect(g);
+        lbl.setMouseTransparent(true);
+        return lbl;
+    }
+
+    private void startPhaseTimer(int totalSeconds, Color color){
+        if(phaseTimerAnim!=null) phaseTimerAnim.stop();
+        if(phaseTimerLabel==null) return;
+        int[] remaining={totalSeconds};
+        phaseTimerLabel.setText("⏱ "+remaining[0]+"s");
+        phaseTimerAnim=new Timeline(new KeyFrame(Duration.seconds(1),e->{
+            remaining[0]--;
+            if(remaining[0]>=0) phaseTimerLabel.setText("⏱ "+remaining[0]+"s");
+            // Son 10 saniye kırmızı yanıp sönsün
+            if(remaining[0]<=10&&remaining[0]>0){
+                phaseTimerLabel.setTextFill(NEON_RED);
+                phaseTimerLabel.setEffect(new DropShadow(sf(15),NEON_RED));
+            }
+        }));
+        phaseTimerAnim.setCycleCount(totalSeconds);
+        phaseTimerAnim.play();
+    }
+
     private void showVoteResultThenNight(String resultMessage){
         StackPane root=createDayBackground();
         VBox content=new VBox(sy(24));content.setAlignment(Pos.CENTER);
@@ -802,37 +1529,73 @@ public class ImpostraGUI extends Application {
     // ================================================================
     //  EKRAN 5: GAME OVER — Yeniden başlatma butonu ile
     // ================================================================
+    // Eski imza için backward compat (kullanılmıyor ama dursun)
     public void showGameOverScreen(String winnerMessage){
+        showGameOverScreen(winnerMessage,new String[0],new String[0],new boolean[0],new boolean[0]);
+    }
+
+    public void showGameOverScreen(String winnerMessage,String[] playerNames,String[] playerRoles,boolean[] playerEvil,boolean[] playerAlive){
         boolean goodWon=winnerMessage.contains("İYİLER")||winnerMessage.contains("GÜVENDE");
         Color themeColor=goodWon?NEON_CYAN:NEON_RED;
         playSound(goodWon?soundWin:soundLose);
 
         StackPane root=goodWon?createDayBackground():createNightBackground();
-        VBox content=new VBox(sy(28));content.setAlignment(Pos.CENTER);
+        VBox content=new VBox(sy(18));content.setAlignment(Pos.CENTER);content.setPadding(new Insets(sy(20)));
 
-        Label icon=new Label(goodWon?"✓":"✕");icon.setTextFill(themeColor);icon.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(90)));
+        Label icon=new Label(goodWon?"✓":"✕");icon.setTextFill(themeColor);icon.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(70)));
         DropShadow ig=new DropShadow(sf(40),themeColor);ig.setSpread(0.4);icon.setEffect(ig);
-        Label title=createNeonTitle("// OYUN BİTTİ",themeColor,46);
+        Label title=createNeonTitle("// OYUN BİTTİ",themeColor,38);
         VBox resultBox=createGlassPanel(themeColor);resultBox.setMaxWidth(sx(660));
-        Label msg=new Label(winnerMessage);msg.setTextFill(themeColor);msg.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(22)));msg.setWrapText(true);msg.setMaxWidth(sx(600));resultBox.getChildren().add(msg);
+        Label msg=new Label(winnerMessage);msg.setTextFill(themeColor);msg.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(18)));msg.setWrapText(true);msg.setMaxWidth(sx(600));resultBox.getChildren().add(msg);
 
-        // Tur bilgisi
+        // Rol listesi paneli
+        VBox roleListBox=null;
+        if(playerNames!=null&&playerNames.length>0){
+            roleListBox=createGlassPanel(Color.web("#808090"));
+            roleListBox.setMaxWidth(sx(560));roleListBox.setSpacing(sy(6));
+            Label header=new Label("ROL AÇIKLAMASI");header.setTextFill(Color.web("#a0a0b0"));header.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(13)));
+            roleListBox.getChildren().add(header);
+            Rectangle sep=new Rectangle(sx(400),1);sep.setFill(Color.web("#606070"));sep.setOpacity(0.5);
+            roleListBox.getChildren().add(sep);
+
+            for(int i=0;i<playerNames.length;i++){
+                HBox row=new HBox(sx(12));row.setAlignment(Pos.CENTER_LEFT);
+                Color rowColor=playerEvil[i]?NEON_RED:NEON_CYAN;
+                String status=playerAlive[i]?"✓ HAYATTA":"✕ SİLİNDİ";
+
+                Label nameLbl=new Label(playerNames[i]);nameLbl.setTextFill(rowColor);
+                nameLbl.setFont(Font.font(FONT_MONO,FontWeight.BOLD,sf(13)));
+                nameLbl.setMinWidth(sx(120));
+
+                Label roleLbl=new Label("→ "+playerRoles[i]);roleLbl.setTextFill(rowColor);
+                roleLbl.setFont(Font.font(FONT_MONO,sf(12)));roleLbl.setOpacity(0.9);
+                roleLbl.setMinWidth(sx(200));
+
+                Label statusLbl=new Label(status);
+                statusLbl.setTextFill(playerAlive[i]?NEON_GREEN:COLOR_DEAD);
+                statusLbl.setFont(Font.font(FONT_MONO,sf(11)));
+
+                row.getChildren().addAll(nameLbl,roleLbl,statusLbl);
+                roleListBox.getChildren().add(row);
+            }
+        }
+
         Label roundInfo=new Label("Toplam " + currentRound + " turda tamamlandı.");
-        roundInfo.setTextFill(Color.web("#808090"));roundInfo.setFont(Font.font(FONT_MONO,sf(13)));
+        roundInfo.setTextFill(Color.web("#808090"));roundInfo.setFont(Font.font(FONT_MONO,sf(12)));
 
-        // Yeniden başlatma butonu
         Button restartBtn=createNeonButton("» YENİ OYUN «",NEON_GREEN,NEON_GREEN);
         restartBtn.setOnAction(e->{
             if(client!=null&&client.isConnected()){
                 client.sendTCP(new Network.RestartRequestPacket());
-                // Sunucu ResetPacket gönderecek, o gelince lobiye dönülür
             }
         });
 
         ScaleTransition pulse=new ScaleTransition(Duration.seconds(1),icon);
-        pulse.setFromX(1);pulse.setFromY(1);pulse.setToX(1.1);pulse.setToY(1.1);pulse.setCycleCount(Animation.INDEFINITE);pulse.setAutoReverse(true);pulse.play();
+        pulse.setFromX(1);pulse.setFromY(1);pulse.setToX(1.08);pulse.setToY(1.08);pulse.setCycleCount(Animation.INDEFINITE);pulse.setAutoReverse(true);pulse.play();
 
-        content.getChildren().addAll(icon,title,resultBox,roundInfo,restartBtn);
+        content.getChildren().addAll(icon,title,resultBox);
+        if(roleListBox!=null) content.getChildren().add(roleListBox);
+        content.getChildren().addAll(roundInfo,restartBtn);
         root.getChildren().add(content);
         switchScene(root);
     }
